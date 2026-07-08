@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>朱入れ Shuire — ログイン</title>
+  <title>__BRAND__ — ログイン</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div class="login-wrap">
     <div class="login-card">
       <div class="login-brand">
-        <span class="hanko">朱</span>
-        <h1>朱入れ</h1>
-        <p>仕様書レビューツール / HTML Spec Review</p>
+        <span class="hanko" data-brand="mark"></span>
+        <h1 data-brand="nameJa"></h1>
+        <p data-brand="taglineLong"></p>
       </div>
 
       <div class="auth-toggle">
@@ -30,7 +30,7 @@
       </div>
       <div class="field">
         <label for="password">パスワード / Password</label>
-        <input type="password" id="password" autocomplete="current-password" placeholder="••••••••">
+        <input type="password" id="password" autocomplete="current-password" placeholder="8文字以上">
       </div>
 
       <button class="btn" id="submit-btn" style="width:100%" onclick="submit()">ログイン / Sign in</button>
@@ -38,8 +38,8 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js"></script>
+  <script src="js/brand.js"></script>
+  <script src="js/api.js"></script>
   <script>
     let mode = "signin";
 
@@ -68,22 +68,12 @@
       btn.disabled = true;
       try {
         if (mode === "signup") {
-          const displayName = document.getElementById("display-name").value.trim();
-          const { data, error } = await sb.auth.signUp({
-            email, password,
-            options: { data: { display_name: displayName } }
-          });
-          if (error) throw error;
-          if (data.session) {
-            location.href = "dashboard.html";
-          } else {
-            errEl.textContent = "確認メールを送信しました。メール内のリンクを開いてからログインしてください。 / Check your email to confirm your account.";
-          }
+          const display_name = document.getElementById("display-name").value.trim();
+          await apiPost("/api/auth/signup", { email, password, display_name });
         } else {
-          const { error } = await sb.auth.signInWithPassword({ email, password });
-          if (error) throw error;
-          location.href = "dashboard.html";
+          await apiPost("/api/auth/login", { email, password });
         }
+        location.href = "dashboard.html";
       } catch (e) {
         errEl.textContent = e.message || "エラーが発生しました。";
       } finally {
@@ -96,9 +86,8 @@
     });
 
     // Already signed in? Skip to dashboard.
-    sb.auth.getSession().then(({ data: { session } }) => {
-      if (session) location.href = "dashboard.html";
-    });
+    fetch("/api/auth/me", { credentials: "same-origin" })
+      .then(r => { if (r.ok) location.href = "dashboard.html"; });
   </script>
 </body>
 </html>

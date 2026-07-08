@@ -2,30 +2,17 @@
 // 朱入れ (Shuire) — shared helpers
 // ============================================
 
-let currentUser = null;
 let currentProfile = null;
 
-// Redirect to login if not signed in; returns {user, profile}
+// Redirect to login if not signed in; returns the profile
 async function requireAuth() {
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) {
+  try {
+    currentProfile = await apiGet("/api/auth/me");
+    return currentProfile;
+  } catch (e) {
     location.href = "index.html";
     return null;
   }
-  currentUser = session.user;
-  const { data: profile, error } = await sb
-    .from("profiles")
-    .select("*")
-    .eq("id", currentUser.id)
-    .single();
-  if (error || !profile) {
-    console.error("Profile load failed", error);
-    await sb.auth.signOut();
-    location.href = "index.html";
-    return null;
-  }
-  currentProfile = profile;
-  return { user: currentUser, profile: currentProfile };
 }
 
 function isInternal() {
@@ -33,7 +20,7 @@ function isInternal() {
 }
 
 async function signOut() {
-  await sb.auth.signOut();
+  try { await apiPost("/api/auth/logout"); } catch (_) {}
   location.href = "index.html";
 }
 
@@ -45,8 +32,8 @@ function renderHeader() {
   const roleLabel = isInternal() ? "社内 / Internal" : "クライアント / Client";
   el.innerHTML = `
     <a class="brand" href="dashboard.html">
-      <span class="hanko">朱</span>
-      <span class="brand-text"><strong>朱入れ</strong><small>Shuire — Spec Review</small></span>
+      <span class="hanko">${escapeHtml(BRAND.mark)}</span>
+      <span class="brand-text"><strong>${escapeHtml(BRAND.nameJa)}</strong><small>${escapeHtml(BRAND.nameEn)} — ${escapeHtml(BRAND.tagline)}</small></span>
     </a>
     <div class="header-user">
       <span class="user-chip"><span class="user-name">${name}</span><span class="user-role">${roleLabel}</span></span>
