@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>朱入れ Shuire — プロジェクト</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header id="app-header"></header>
+
+  <main class="container">
+    <div class="eyebrow">Project</div>
+    <h1 class="page-title" id="project-title">読み込み中…</h1>
+
+    <!-- Upload (internal only) -->
+    <div class="card" id="upload-card" style="display:none; margin-bottom:8px;">
+      <div class="form-row">
+        <div class="field">
+          <label for="file-input">HTMLファイルをアップロード / Upload HTML</label>
+          <input type="file" id="file-input" accept=".html,.htm,text/html">
+        </div>
+        <button class="btn btn-shu" id="upload-btn" onclick="uploadFile()">アップロード / Upload</button>
+      </div>
+      <p style="font-size:12px; color:var(--ink-soft); margin-top:8px;">
+        同じファイル名で再アップロードすると、新しいバージョンとして保存されます。
+      </p>
+    </div>
+
+    <h2 class="section-title">ドキュメント / Documents</h2>
+    <div class="list" id="doc-list"><div class="empty">読み込み中…</div></div>
+
+    <!-- Members (internal only) -->
+    <section id="members-section" style="display:none">
+      <h2 class="section-title">メンバー / Members</h2>
+      <div class="card" style="margin-bottom:12px;">
+        <div class="form-row">
+          <div class="field">
+            <label for="member-email">メールアドレスで追加 / Add by email</label>
+            <input type="email" id="member-email" placeholder="client@example.com">
+          </div>
+          <div class="field" style="flex:0 0 220px;">
+            <label for="member-role">権限 / Role</label>
+            <select id="member-role">
+              <option value="client_commenter">コメント可 / Can comment</option>
+              <option value="client_viewer">閲覧のみ / View only</option>
+              <option value="owner">オーナー / Owner</option>
+            </select>
+          </div>
+          <button class="btn" onclick="addMember()">追加 / Add</button>
+        </div>
+        <p style="font-size:12px; color:var(--ink-soft); margin-top:8px;">
+          追加する相手は、先にこのツールでアカウント登録を済ませている必要があります。
+        </p>
+      </div>
+      <div class="list" id="member-list"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    const projectId = qs("id");
+    const ROLE_LABEL = {
+      owner: "オーナー / Owner",
+      client_commenter: "コメント可 / Can comment",
+      client_viewer: "閲覧のみ / View only"
+    };
+
+    async function init() {
+      const auth = await requireAuth();
+      if (!auth) return;
+      renderHeader();
+      if (!projectId) { location.href = "dashboard.html"; return; }
+
+      const { data: project, error } = await sb
+        .from("projects").select("*").eq("id", projectId).single();
+      if (error || !project) {
+        document.getElementById("project-title").textContent = "プロジェクトが見つかりません";
+        return;
+      }
+      document.getElementById("project-title").textContent = project.name;
+      document.title = `朱入れ — ${project.name}`;
+
+      if (isInternal()) {
+        document.getElementById("upload-card").style.display = "";
+        document.getElementById("members-section").style.display = "";
+        await loadMembers();
+      }
+      await loadDocuments();
+    }
+
+    // ---------- documents ----------
+
+    async function loadDocuments() {
+      const el = document.getElementById("doc-list");
+      const { data: docs, error } = await sb
+        .from("documents")
+        .select("id, filename, version, uploaded_at")
+        .eq("project_id", projectId)
+        .order("filename").order("version", { ascending: false });
+
+      if (error) { el.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`; return; }
+      if (!docs.length) { el.innerHTML = `<div class="empty">ドキュメントはまだありません。 / No documents yet.</div>`; return; }
+
+      // group by filename → show latest version, link to viewer
+      const groups = {};
+      for (const d of docs) (groups[d.filename] ??= []).push(d);
+
+      el.innerHTML = Object.entries(groups).map(([filename, versions]) => {
+        const latest = versions[0];
+        return `
+          <a class="list-item" href="viewer.html?doc=${latest.id}">
+            <div class="item-main">
+              <div class="item-title">${escapeHtml(filename)}</div>
+              <div class="item-sub">最終更新 ${fmtDate(latest.uploaded_at)}</div>
+            </div>
+            <div class="item-side">
+              <span class="badge badge-shu">v${latest.version}</span>
+              <span class="badge">${versions.length} version${versions.length > 1 ? "s" : ""}</span>
+            </div>
+          </a>`;
+      }).join("");
+    }
+
+    async function uploadFile() {
+      const input = document.getElementById("file-input");
+      const btn = document.getElementById("upload-btn");
+      const file = input.files[0];
+      if (!file) { toast("ファイルを選択してください", true); return; }
+      if (!/\.html?$/i.test(file.name)) { toast("HTMLファイル(.html / .htm)のみ対応です", true); return; }
+
+      btn.disabled = true;
+      try {
+        // next version for this filename
+        const { data: prev, error: qErr } = await sb
+          .from("documents")
+          .select("version")
+          .eq("project_id", projectId)
+          .eq("filename", file.name)
+          .order("version", { ascending: false })
+          .limit(1);
+        if (qErr) throw qErr;
+        const version = prev.length ? prev[0].version + 1 : 1;
+
+        // create row first to get an id for the storage path
+        const { data: doc, error: insErr } = await sb
+          .from("documents")
+          .insert({
+            project_id: projectId,
+            filename: file.name,
+            storage_path: "pending",
+            version,
+            uploaded_by: currentUser.id
+          })
+          .select()
+          .single();
+        if (insErr) throw insErr;
+
+        const path = `${projectId}/${doc.id}.html`;
+        const { error: upErr } = await sb.storage
+          .from("documents")
+          .upload(path, file, { contentType: "text/html", upsert: false });
+        if (upErr) {
+          await sb.from("documents").delete().eq("id", doc.id); // rollback
+          throw upErr;
+        }
+
+        const { error: updErr } = await sb
+          .from("documents").update({ storage_path: path }).eq("id", doc.id);
+        if (updErr) throw updErr;
+
+        input.value = "";
+        toast(`${file.name} を v${version} として保存しました`);
+        await loadDocuments();
+      } catch (e) {
+        toast("アップロード失敗: " + (e.message || e), true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ---------- members ----------
+
+    async function loadMembers() {
+      const el = document.getElementById("member-list");
+      const { data: members, error } = await sb
+        .from("project_members")
+        .select("user_id, member_role, profiles(display_name, email)")
+        .eq("project_id", projectId);
+
+      if (error) { el.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`; return; }
+      if (!members.length) { el.innerHTML = `<div class="empty">クライアントメンバーはまだいません。</div>`; return; }
+
+      el.innerHTML = members.map(m => `
+        <div class="list-item">
+          <div class="item-main">
+            <div class="item-title">${escapeHtml(m.profiles?.display_name || "—")}</div>
+            <div class="item-sub">${escapeHtml(m.profiles?.email || "")}</div>
+          </div>
+          <div class="item-side">
+            <span class="badge badge-ai">${ROLE_LABEL[m.member_role] || m.member_role}</span>
+            <button class="btn btn-ghost btn-sm" onclick="removeMember('${m.user_id}')">削除 / Remove</button>
+          </div>
+        </div>`).join("");
+    }
+
+    async function addMember() {
+      const email = document.getElementById("member-email").value.trim().toLowerCase();
+      const role = document.getElementById("member-role").value;
+      if (!email) { toast("メールアドレスを入力してください", true); return; }
+
+      const { data: profile, error: pErr } = await sb
+        .from("profiles").select("id").eq("email", email).maybeSingle();
+      if (pErr) { toast(pErr.message, true); return; }
+      if (!profile) { toast("そのメールアドレスのユーザーが見つかりません。先にアカウント登録が必要です。", true); return; }
+
+      const { error } = await sb.from("project_members").insert({
+        project_id: projectId, user_id: profile.id, member_role: role
+      });
+      if (error) {
+        toast(error.code === "23505" ? "すでにメンバーです" : "追加失敗: " + error.message, true);
+        return;
+      }
+      document.getElementById("member-email").value = "";
+      toast("メンバーを追加しました");
+      await loadMembers();
+    }
+
+    async function removeMember(userId) {
+      const { error } = await sb.from("project_members")
+        .delete().eq("project_id", projectId).eq("user_id", userId);
+      if (error) { toast("削除失敗: " + error.message, true); return; }
+      toast("メンバーを削除しました");
+      await loadMembers();
+    }
+
+    init();
+  </script>
+</body>
+</html>

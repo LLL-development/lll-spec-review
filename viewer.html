@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>朱入れ Shuire — ビューア</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="viewer-body">
+  <div class="viewer-toolbar">
+    <a class="brand" href="dashboard.html" style="gap:8px;">
+      <span class="hanko" style="width:30px;height:30px;font-size:17px;">朱</span>
+    </a>
+    <a class="btn btn-ghost btn-sm" id="back-link" href="dashboard.html">← 戻る / Back</a>
+    <span class="doc-name" id="doc-name">読み込み中…</span>
+    <select id="version-select" onchange="switchVersion(this.value)"></select>
+    <div class="spacer"></div>
+    <span class="badge" id="uploaded-at"></span>
+  </div>
+
+  <iframe id="doc-frame" sandbox="allow-scripts allow-popups" title="Document preview"></iframe>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    let currentDoc = null;
+    let versions = [];
+    let blobUrl = null;
+
+    async function init() {
+      const auth = await requireAuth();
+      if (!auth) return;
+
+      const docId = qs("doc");
+      if (!docId) { location.href = "dashboard.html"; return; }
+
+      const { data: doc, error } = await sb
+        .from("documents").select("*").eq("id", docId).single();
+      if (error || !doc) {
+        document.getElementById("doc-name").textContent = "ドキュメントが見つかりません";
+        return;
+      }
+      currentDoc = doc;
+      document.getElementById("back-link").href = `project.html?id=${doc.project_id}`;
+      document.getElementById("doc-name").textContent = doc.filename;
+      document.title = `朱入れ — ${doc.filename}`;
+
+      // all versions of this filename in this project
+      const { data: vers, error: vErr } = await sb
+        .from("documents")
+        .select("id, version, uploaded_at")
+        .eq("project_id", doc.project_id)
+        .eq("filename", doc.filename)
+        .order("version", { ascending: false });
+      if (vErr) { toast(vErr.message, true); return; }
+      versions = vers;
+
+      const sel = document.getElementById("version-select");
+      sel.innerHTML = versions.map(v =>
+        `<option value="${v.id}" ${v.id === doc.id ? "selected" : ""}>v${v.version}${v === versions[0] ? " (最新)" : ""}</option>`
+      ).join("");
+
+      await renderDoc(doc);
+    }
+
+    async function renderDoc(doc) {
+      document.getElementById("uploaded-at").textContent = fmtDate(doc.uploaded_at);
+      const frame = document.getElementById("doc-frame");
+
+      const { data: blob, error } = await sb.storage
+        .from("documents")
+        .download(doc.storage_path);
+      if (error) { toast("ファイルの取得に失敗しました: " + error.message, true); return; }
+
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      blobUrl = URL.createObjectURL(new Blob([blob], { type: "text/html" }));
+      frame.src = blobUrl;
+    }
+
+    async function switchVersion(docId) {
+      const { data: doc, error } = await sb
+        .from("documents").select("*").eq("id", docId).single();
+      if (error || !doc) { toast("バージョンの読み込みに失敗しました", true); return; }
+      currentDoc = doc;
+      history.replaceState(null, "", `viewer.html?doc=${doc.id}`);
+      await renderDoc(doc);
+    }
+
+    init();
+  </script>
+</body>
+</html>

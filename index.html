@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>朱入れ Shuire — ログイン</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-brand">
+        <span class="hanko">朱</span>
+        <h1>朱入れ</h1>
+        <p>仕様書レビューツール / HTML Spec Review</p>
+      </div>
+
+      <div class="auth-toggle">
+        <button id="tab-signin" class="active" onclick="setMode('signin')">ログイン / Sign in</button>
+        <button id="tab-signup" onclick="setMode('signup')">新規登録 / Sign up</button>
+      </div>
+
+      <div class="field" id="field-name" style="display:none">
+        <label for="display-name">表示名 / Display name</label>
+        <input type="text" id="display-name" autocomplete="name" placeholder="山田 太郎">
+      </div>
+      <div class="field">
+        <label for="email">メールアドレス / Email</label>
+        <input type="email" id="email" autocomplete="email" placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <label for="password">パスワード / Password</label>
+        <input type="password" id="password" autocomplete="current-password" placeholder="••••••••">
+      </div>
+
+      <button class="btn" id="submit-btn" style="width:100%" onclick="submit()">ログイン / Sign in</button>
+      <div class="auth-error" id="auth-error"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script>
+    let mode = "signin";
+
+    function setMode(m) {
+      mode = m;
+      document.getElementById("tab-signin").classList.toggle("active", m === "signin");
+      document.getElementById("tab-signup").classList.toggle("active", m === "signup");
+      document.getElementById("field-name").style.display = m === "signup" ? "" : "none";
+      document.getElementById("submit-btn").textContent =
+        m === "signup" ? "登録する / Create account" : "ログイン / Sign in";
+      document.getElementById("auth-error").textContent = "";
+    }
+
+    async function submit() {
+      const btn = document.getElementById("submit-btn");
+      const errEl = document.getElementById("auth-error");
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      errEl.textContent = "";
+
+      if (!email || !password) {
+        errEl.textContent = "メールアドレスとパスワードを入力してください。";
+        return;
+      }
+
+      btn.disabled = true;
+      try {
+        if (mode === "signup") {
+          const displayName = document.getElementById("display-name").value.trim();
+          const { data, error } = await sb.auth.signUp({
+            email, password,
+            options: { data: { display_name: displayName } }
+          });
+          if (error) throw error;
+          if (data.session) {
+            location.href = "dashboard.html";
+          } else {
+            errEl.textContent = "確認メールを送信しました。メール内のリンクを開いてからログインしてください。 / Check your email to confirm your account.";
+          }
+        } else {
+          const { error } = await sb.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          location.href = "dashboard.html";
+        }
+      } catch (e) {
+        errEl.textContent = e.message || "エラーが発生しました。";
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById("password").addEventListener("keydown", e => {
+      if (e.key === "Enter") submit();
+    });
+
+    // Already signed in? Skip to dashboard.
+    sb.auth.getSession().then(({ data: { session } }) => {
+      if (session) location.href = "dashboard.html";
+    });
+  </script>
+</body>
+</html>

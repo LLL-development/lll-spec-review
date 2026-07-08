@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>朱入れ Shuire — プロジェクト</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header id="app-header"></header>
+
+  <main class="container">
+    <div class="eyebrow">Projects</div>
+    <h1 class="page-title">プロジェクト一覧</h1>
+
+    <div class="card" id="create-card" style="display:none; margin-bottom:28px;">
+      <div class="form-row">
+        <div class="field">
+          <label for="new-name">プロジェクト名 / Project name</label>
+          <input type="text" id="new-name" placeholder="例: まいぷれ仕様書">
+        </div>
+        <div class="field">
+          <label for="new-client">クライアント名 / Client</label>
+          <input type="text" id="new-client" placeholder="例: 〇〇株式会社">
+        </div>
+        <button class="btn btn-shu" onclick="createProject()">作成 / Create</button>
+      </div>
+    </div>
+
+    <div class="list" id="project-list">
+      <div class="empty">読み込み中… / Loading…</div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    async function init() {
+      const auth = await requireAuth();
+      if (!auth) return;
+      renderHeader();
+      if (isInternal()) {
+        document.getElementById("create-card").style.display = "";
+      }
+      await loadProjects();
+    }
+
+    async function loadProjects() {
+      const listEl = document.getElementById("project-list");
+      const { data: projects, error } = await sb
+        .from("projects")
+        .select("id, name, client_name, created_at")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        listEl.innerHTML = `<div class="empty">読み込みに失敗しました: ${escapeHtml(error.message)}</div>`;
+        return;
+      }
+      if (!projects.length) {
+        listEl.innerHTML = `<div class="empty">プロジェクトがまだありません。${isInternal() ? "上のフォームから作成できます。" : "担当者に招待を依頼してください。 / Ask your contact to invite you."}</div>`;
+        return;
+      }
+      listEl.innerHTML = projects.map(p => `
+        <a class="list-item" href="project.html?id=${p.id}">
+          <div class="item-main">
+            <div class="item-title">${escapeHtml(p.name)}</div>
+            <div class="item-sub">${escapeHtml(p.client_name || "—")} ・ ${fmtDate(p.created_at)}</div>
+          </div>
+          <div class="item-side"><span class="badge badge-ai">開く / Open</span></div>
+        </a>`).join("");
+    }
+
+    async function createProject() {
+      const name = document.getElementById("new-name").value.trim();
+      const client = document.getElementById("new-client").value.trim();
+      if (!name) { toast("プロジェクト名を入力してください", true); return; }
+
+      const { error } = await sb.from("projects").insert({
+        name, client_name: client, created_by: currentUser.id
+      });
+      if (error) { toast("作成に失敗しました: " + error.message, true); return; }
+      document.getElementById("new-name").value = "";
+      document.getElementById("new-client").value = "";
+      toast("プロジェクトを作成しました");
+      await loadProjects();
+    }
+
+    init();
+  </script>
+</body>
+</html>
