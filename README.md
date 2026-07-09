@@ -163,7 +163,32 @@ On the project page, invite by email:
 - Forgot it? **PWリセット** next to any client member generates a fresh one and
   revokes their old sessions.
 
-## Next: Phase 3 (notifications)
+## Phase 3: Notifications (implemented)
 
-New-comment notifications → email + Lorely. Also worth adding: a self-service
-password change screen for clients, and login rate limiting.
+New comment/reply → all project members + project creator + document uploader
+(minus the author) are notified, in the background via `waitUntil` so posting
+stays instant. Both channels are optional — unset = silently skipped:
+
+| Channel | Setup |
+|---|---|
+| Email (Resend) | `npx wrangler secret put RESEND_API_KEY` — free tier 100/day. Set `MAIL_FROM` in wrangler.jsonc vars (default `onboarding@resend.dev` works for testing; verify your domain in Resend for production). |
+| Webhook (Lorely etc.) | `npx wrangler secret put NOTIFY_WEBHOOK_URL` — posts JSON `{"text": "..."}`, Slack-compatible shape. Needs an inbound webhook URL/token on the Lorely side. |
+
+Also set `APP_URL` in wrangler.jsonc vars so notification links point at your
+deployment (already set to the philip-81c workers.dev URL).
+
+## Phase 4: Account & hardening (implemented)
+
+- **Password change** (`account.html`, linked from the header): verifies the
+  current password, then revokes all sessions and issues a fresh one.
+- **Login rate limiting**: 5 failed attempts per email per 15 min → 429.
+  Requires migration `migrations/0002-login-attempts.sql` (login degrades
+  gracefully to no-rate-limit until it's applied).
+- Mobile toolbar polish (ellipsized doc names, tighter touch targets).
+
+### Applying migrations
+
+Actions tab → Deploy → Run workflow → set **sql_file** to
+`migrations/0002-login-attempts.sql` → Run. (Or paste the file into the D1
+Console.) The old "apply schema" checkbox became this input — pass
+`schema.sql` for first-time setup.

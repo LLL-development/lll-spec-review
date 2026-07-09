@@ -1,0 +1,48 @@
+feat: Phase 3+4 — comment notifications, password self-service, login rate limiting
+
+Phase 3 (notifications) and Phase 4 (account & hardening) in one pass.
+Requires migration migrations/0002-login-attempts.sql (login works without
+it, just unthrottled). Notifications are opt-in via secrets — nothing to
+configure to keep current behavior.
+
+## Phase 3 — Notifications
+
+worker/notify.js (NEW)
+- notifyNewComment(): recipients = project members + project creator +
+  document uploader, minus author, deduped
+- Email via Resend API (secret RESEND_API_KEY + var MAIL_FROM); one
+  request per recipient, failures logged and swallowed
+- Generic webhook (secret NOTIFY_WEBHOOK_URL): posts {"text": ...},
+  Slack-compatible — intended for Lorely once an inbound URL exists
+- Both channels optional; absent secrets = channel silently skipped
+
+worker/index.js
+- POST comments now fires notifyNewComment via c.executionCtx.waitUntil()
+  — response returns immediately, notification runs in background
+
+wrangler.jsonc
+- vars: APP_URL (notification links), BRAND_NAME, MAIL_FROM
+
+## Phase 4 — Account & hardening
+
+account.html (NEW) + header link
+- Self-service password change: verifies current password, revokes all
+  sessions, issues a fresh session cookie
+
+worker/index.js
+- POST /api/auth/change-password
+- Login rate limiting: 5 failed attempts per email per 15 minutes → 429;
+  attempts cleared on success; opportunistic cleanup of stale rows;
+  try/catch so login degrades gracefully before migration 0002 is applied
+
+migrations/0002-login-attempts.sql (NEW)
+- login_attempts table + index
+
+css/style.css
+- Mobile viewer-toolbar polish (ellipsized doc name, tighter buttons)
+
+## CI
+
+.github/workflows/deploy.yml
+- workflow_dispatch input changed: apply_schema (boolean) → sql_file
+  (string path), so any migration can be applied from the Actions UI

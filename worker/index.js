@@ -24,6 +24,7 @@
 
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
+import { notifyNewComment } from "./notify.js";
 import {
   COOKIE_NAME, uuid,
   hashPassword, verifyPassword, generatePassword,
@@ -96,15 +97,59 @@ app.post("/api/auth/login", async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const cleanEmail = (email || "").trim().toLowerCase();
 
+  // Rate limit: 5 failed attempts per email per 15 minutes.
+  // try/catch so login keeps working even before migration 0002 runs.
+  const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  try {
+    const row = await c.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM login_attempts WHERE email = ? AND at > ?"
+    ).bind(cleanEmail, since).first();
+    if (row && row.n >= 5) {
+      return c.json({ error: "試行回数が多すぎます。15分ほど待ってからお試しください。" }, 429);
+    }
+  } catch (_) { /* table not created yet */ }
+
   const user = await c.env.DB.prepare(
     "SELECT id, password_hash FROM users WHERE email = ?"
   ).bind(cleanEmail).first();
 
   // Same error either way — don't reveal which emails exist
   if (!user || !(await verifyPassword(password || "", user.password_hash))) {
+    try {
+      await c.env.DB.prepare("INSERT INTO login_attempts (email) VALUES (?)").bind(cleanEmail).run();
+      // opportunistic cleanup of stale rows
+      await c.env.DB.prepare("DELETE FROM login_attempts WHERE at <= ?").bind(since).run();
+    } catch (_) {}
     return c.json({ error: "メールアドレスまたはパスワードが違います" }, 401);
   }
 
+  try {
+    await c.env.DB.prepare("DELETE FROM login_attempts WHERE email = ?").bind(cleanEmail).run();
+  } catch (_) {}
+
+  const { token } = await createSession(c.env.DB, user.id);
+  setCookie(c, COOKIE_NAME, token, cookieOpts);
+  return c.json({ ok: true });
+});
+
+// Self-service password change. Verifies the current password,
+// then revokes every session and issues a fresh one — a stolen
+// old session dies the moment the password changes.
+app.post("/api/auth/change-password", async (c) => {
+  const user = c.get("user");
+  if (!user) return c.json({ error: "ログインが必要です" }, 401);
+  const { current_password, new_password } = await c.req.json().catch(() => ({}));
+  if (!new_password || new_password.length < 8) {
+    return c.json({ error: "新しいパスワードは8文字以上にしてください" }, 400);
+  }
+  const row = await c.env.DB.prepare("SELECT password_hash FROM users WHERE id = ?")
+    .bind(user.id).first();
+  if (!(await verifyPassword(current_password || "", row.password_hash))) {
+    return c.json({ error: "現在のパスワードが違います" }, 401);
+  }
+  await c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
+    .bind(await hashPassword(new_password), user.id).run();
+  await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id).run();
   const { token } = await createSession(c.env.DB, user.id);
   setCookie(c, COOKIE_NAME, token, cookieOpts);
   return c.json({ ok: true });
@@ -337,6 +382,18 @@ app.post("/api/documents/:id/comments", async (c) => {
     anchor ? JSON.stringify(anchor) : null,
     text, c.get("user").id, parent_id || null
   ).run();
+
+  // Notify AFTER responding — waitUntil keeps the Worker alive for
+  // background work without making the user wait for email APIs.
+  const project = await c.env.DB.prepare("SELECT * FROM projects WHERE id = ?")
+    .bind(doc.project_id).first();
+  c.executionCtx.waitUntil(notifyNewComment(c.env, {
+    project, doc,
+    author: c.get("user"),
+    body: text,
+    isReply: !!parent_id,
+  }));
+
   return c.json({ id });
 });
 

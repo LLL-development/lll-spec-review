@@ -37,6 +37,7 @@ function renderHeader() {
     </a>
     <div class="header-user">
       <span class="user-chip"><span class="user-name">${name}</span><span class="user-role">${roleLabel}</span></span>
+      <a class="btn btn-ghost btn-sm" href="account.html">アカウント</a>
       <button class="btn btn-ghost btn-sm" onclick="signOut()">ログアウト / Sign out</button>
     </div>`;
 }

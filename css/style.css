@@ -450,3 +450,14 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
   .panel-toggle { display: none; }
   .comment-panel { display: flex !important; }
 }
+
+/* ---------- Phase 4: small-screen toolbar polish ---------- */
+@media (max-width: 640px) {
+  .viewer-toolbar { padding: 8px 10px; gap: 8px; }
+  .viewer-toolbar .doc-name {
+    font-size: 13px; max-width: 34vw;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .viewer-toolbar #back-link { padding: 6px 8px; }
+  .header-user .btn { padding: 6px 8px; font-size: 11px; }
+}

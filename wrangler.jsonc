@@ -20,9 +20,18 @@
     {
       "binding": "DB",
       "database_name": "lll-spec-review",
-      "database_id": "f382b602-3220-4b6f-ac42-0855e3839d7b"
+      "database_id": "PASTE-YOUR-DATABASE-ID-HERE"
     }
   ],
+
+  // Non-secret config. Secrets (RESEND_API_KEY, NOTIFY_WEBHOOK_URL) are set
+  // via: npx wrangler secret put <NAME>  — or Dashboard → Worker → Settings
+  // → Variables and Secrets. Notifications are skipped if secrets are absent.
+  "vars": {
+    "APP_URL": "https://lll-spec-review.philip-81c.workers.dev",
+    "BRAND_NAME": "朱入れ",
+    "MAIL_FROM": "onboarding@resend.dev"
+  },
 
   "r2_buckets": [
     {
