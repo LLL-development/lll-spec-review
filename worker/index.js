@@ -26,9 +26,9 @@ import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import {
   COOKIE_NAME, uuid,
-  hashPassword, verifyPassword,
+  hashPassword, verifyPassword, generatePassword,
   createSession, getSessionUser, destroySession,
-  isInternal, canAccessProject,
+  isInternal, canAccessProject, canCommentOnProject,
 } from "./lib.js";
 
 const app = new Hono();
@@ -65,6 +65,8 @@ const requireInternal = async (c, next) => {
 app.use("/api/projects/*", requireUser);
 app.use("/api/projects", requireUser);
 app.use("/api/documents/*", requireUser);
+app.use("/api/comments/*", requireUser);
+app.use("/api/members/*", requireUser);
 
 // ============================================================
 // AUTH
@@ -163,7 +165,7 @@ app.get("/api/projects/:id", async (c) => {
 
 app.get("/api/projects/:id/members", requireInternal, async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT m.user_id, m.member_role, u.display_name, u.email
+    `SELECT m.user_id, m.member_role, u.display_name, u.email, u.role AS account_role
        FROM project_members m JOIN users u ON u.id = m.user_id
       WHERE m.project_id = ?`
   ).bind(c.req.param("id")).all();
@@ -261,7 +263,8 @@ app.get("/api/documents/:id", async (c) => {
       WHERE project_id = ? AND filename = ? ORDER BY version DESC`
   ).bind(doc.project_id, doc.filename).all();
   const { r2_key, ...meta } = doc; // r2 keys are internal detail
-  return c.json({ ...meta, versions });
+  const can_comment = await canCommentOnProject(c.env.DB, c.get("user"), doc.project_id);
+  return c.json({ ...meta, versions, can_comment });
 });
 
 // The HTML itself, streamed from R2 (after the same access check)
@@ -281,6 +284,155 @@ app.get("/api/documents/:id/content", async (c) => {
       "Cache-Control": "private, no-store",
     },
   });
+});
+
+// ============================================================
+// COMMENTS (Phase 2)
+// ============================================================
+
+// Shared: load a document IF the current user may access its project
+async function getAccessibleDoc(c, docId) {
+  const doc = await c.env.DB.prepare("SELECT * FROM documents WHERE id = ?").bind(docId).first();
+  if (!doc) return null;
+  if (!(await canAccessProject(c.env.DB, c.get("user"), doc.project_id))) return null;
+  return doc;
+}
+
+app.get("/api/documents/:id/comments", async (c) => {
+  const doc = await getAccessibleDoc(c, c.req.param("id"));
+  if (!doc) return c.json({ error: "not found" }, 404);
+  const { results } = await c.env.DB.prepare(
+    `SELECT cm.id, cm.anchor, cm.body, cm.author_id, cm.parent_id, cm.resolved, cm.created_at,
+            u.display_name AS author_name, u.role AS author_role
+       FROM comments cm JOIN users u ON u.id = cm.author_id
+      WHERE cm.document_id = ? ORDER BY cm.created_at ASC`
+  ).bind(doc.id).all();
+  return c.json(results.map(r => ({ ...r, anchor: r.anchor ? JSON.parse(r.anchor) : null })));
+});
+
+app.post("/api/documents/:id/comments", async (c) => {
+  const doc = await getAccessibleDoc(c, c.req.param("id"));
+  if (!doc) return c.json({ error: "not found" }, 404);
+  if (!(await canCommentOnProject(c.env.DB, c.get("user"), doc.project_id))) {
+    return c.json({ error: "コメント権限がありません / No comment permission" }, 403);
+  }
+  const { body, anchor, parent_id } = await c.req.json().catch(() => ({}));
+  const text = (body || "").trim();
+  if (!text) return c.json({ error: "コメントを入力してください" }, 400);
+  if (text.length > 4000) return c.json({ error: "コメントが長すぎます(4000文字まで)" }, 400);
+
+  if (parent_id) {
+    const parent = await c.env.DB.prepare(
+      "SELECT 1 FROM comments WHERE id = ? AND document_id = ?"
+    ).bind(parent_id, doc.id).first();
+    if (!parent) return c.json({ error: "返信先が見つかりません" }, 400);
+  }
+
+  const id = uuid();
+  await c.env.DB.prepare(
+    `INSERT INTO comments (id, document_id, anchor, body, author_id, parent_id)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id, doc.id,
+    anchor ? JSON.stringify(anchor) : null,
+    text, c.get("user").id, parent_id || null
+  ).run();
+  return c.json({ id });
+});
+
+// resolve/unresolve (any commenter on the project) / edit body (author only)
+app.patch("/api/comments/:id", async (c) => {
+  const cm = await c.env.DB.prepare("SELECT * FROM comments WHERE id = ?")
+    .bind(c.req.param("id")).first();
+  if (!cm) return c.json({ error: "not found" }, 404);
+  const doc = await getAccessibleDoc(c, cm.document_id);
+  if (!doc) return c.json({ error: "not found" }, 404);
+
+  const user = c.get("user");
+  const patch = await c.req.json().catch(() => ({}));
+
+  if ("resolved" in patch) {
+    if (!(await canCommentOnProject(c.env.DB, user, doc.project_id))) {
+      return c.json({ error: "権限がありません" }, 403);
+    }
+    await c.env.DB.prepare("UPDATE comments SET resolved = ? WHERE id = ?")
+      .bind(patch.resolved ? 1 : 0, cm.id).run();
+  }
+  if ("body" in patch) {
+    if (cm.author_id !== user.id) return c.json({ error: "自分のコメントのみ編集できます" }, 403);
+    const text = (patch.body || "").trim();
+    if (!text) return c.json({ error: "コメントを入力してください" }, 400);
+    await c.env.DB.prepare("UPDATE comments SET body = ? WHERE id = ?").bind(text, cm.id).run();
+  }
+  return c.json({ ok: true });
+});
+
+app.delete("/api/comments/:id", async (c) => {
+  const cm = await c.env.DB.prepare("SELECT * FROM comments WHERE id = ?")
+    .bind(c.req.param("id")).first();
+  if (!cm) return c.json({ error: "not found" }, 404);
+  const doc = await getAccessibleDoc(c, cm.document_id);
+  if (!doc) return c.json({ error: "not found" }, 404);
+
+  const user = c.get("user");
+  if (cm.author_id !== user.id && !isInternal(user)) {
+    return c.json({ error: "権限がありません" }, 403);
+  }
+  await c.env.DB.prepare("DELETE FROM comments WHERE id = ?").bind(cm.id).run();
+  return c.json({ ok: true });
+});
+
+// ============================================================
+// INVITES & PASSWORD RESET (internal only)
+// ============================================================
+
+// Invite by email. If no account exists, one is created with an
+// auto-generated password — returned ONCE in this response.
+app.post("/api/projects/:id/members/invite", requireInternal, async (c) => {
+  const { email, display_name, member_role } = await c.req.json().catch(() => ({}));
+  const cleanEmail = (email || "").trim().toLowerCase();
+  const roles = ["owner", "client_commenter", "client_viewer"];
+  if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) return c.json({ error: "メールアドレスが正しくありません" }, 400);
+  if (!roles.includes(member_role)) return c.json({ error: "invalid role" }, 400);
+
+  let target = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(cleanEmail).first();
+  let password = null;
+
+  if (!target) {
+    password = generatePassword();
+    const newId = uuid();
+    await c.env.DB.prepare(
+      "INSERT INTO users (id, email, display_name, role, password_hash) VALUES (?, ?, ?, 'client', ?)"
+    ).bind(newId, cleanEmail, (display_name || "").trim() || cleanEmail.split("@")[0], await hashPassword(password)).run();
+    target = { id: newId };
+  }
+
+  try {
+    await c.env.DB.prepare(
+      "INSERT INTO project_members (project_id, user_id, member_role) VALUES (?, ?, ?)"
+    ).bind(c.req.param("id"), target.id, member_role).run();
+  } catch (e) {
+    if (String(e).includes("UNIQUE")) return c.json({ error: "すでにメンバーです" }, 409);
+    throw e;
+  }
+  return c.json({ ok: true, created: !!password, email: cleanEmail, password });
+});
+
+// Regenerate a client's password (e.g. forgotten). Client accounts
+// only — internal staff manage their own. All their sessions are
+// revoked so a lost/shared old password can't linger.
+app.post("/api/members/:userId/reset-password", requireInternal, async (c) => {
+  const target = await c.env.DB.prepare(
+    "SELECT id, role, email FROM users WHERE id = ?"
+  ).bind(c.req.param("userId")).first();
+  if (!target) return c.json({ error: "not found" }, 404);
+  if (target.role !== "client") return c.json({ error: "クライアントアカウントのみリセットできます" }, 403);
+
+  const password = generatePassword();
+  await c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
+    .bind(await hashPassword(password), target.id).run();
+  await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(target.id).run();
+  return c.json({ ok: true, email: target.email, password });
 });
 
 // ---------- 404 for unknown API routes; everything else → static assets ----------

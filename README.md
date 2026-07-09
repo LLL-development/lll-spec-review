@@ -138,8 +138,32 @@ storage, zero egress fees. A client review tool won't scratch any of these.
 If you ever outgrow Free, the Workers paid plan is $5/mo — and lets you raise
 `PBKDF2_ITERATIONS` in `worker/lib.js` for stronger password hashing.
 
-## Next: Phase 2 (comments)
+## Phase 2: Comments (implemented)
 
-The `comments` table and the `canCommentOnProject()` permission helper already
-exist. Phase 2 adds: comment API routes, pin placement via postMessage into the
-iframe, selector generation, threads/resolve, and light polling for updates.
+- **Pin comments**: toggle コメントモード in the viewer, click anywhere in the
+  document (tables, SVG shapes, anything) → a numbered pin + threaded comment.
+- **Anchoring**: each comment stores a CSS selector + a text snippet + relative
+  x/y. Selector resolves first; if the doc changed, text-snippet matching takes
+  over; if both fail the comment still shows in the sidebar (just unpinned).
+- **Threads**: replies, resolve/reopen, delete (author or internal). Resolved
+  threads are hidden by default. LLL staff get an internal badge.
+- **Overlay isolation**: `js/overlay.js` is injected into the doc inside the
+  sandboxed iframe and talks to the viewer only via postMessage — it never sees
+  the session cookie.
+- **Updates**: light polling (15s + on tab focus). No websockets to babysit.
+- **Mobile**: the comment panel becomes a bottom sheet (💬 button in toolbar).
+
+## Client invites with auto-generated passwords
+
+On the project page, invite by email:
+- Email already registered → added to the project.
+- Not registered → account auto-created with a generated password
+  (e.g. `momiji-kaze-x7k3n2`), shown **once** with a copy button. Share it with
+  the client through a safe channel.
+- Forgot it? **PWリセット** next to any client member generates a fresh one and
+  revokes their old sessions.
+
+## Next: Phase 3 (notifications)
+
+New-comment notifications → email + Lorely. Also worth adding: a self-service
+password change screen for clients, and login rate limiting.

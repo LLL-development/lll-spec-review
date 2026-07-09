@@ -36,10 +36,14 @@
       <div class="card" style="margin-bottom:12px;">
         <div class="form-row">
           <div class="field">
-            <label for="member-email">メールアドレスで追加 / Add by email</label>
+            <label for="member-email">メールアドレス / Email</label>
             <input type="email" id="member-email" placeholder="client@example.com">
           </div>
-          <div class="field" style="flex:0 0 220px;">
+          <div class="field">
+            <label for="member-name">表示名 / Name (新規の場合)</label>
+            <input type="text" id="member-name" placeholder="例: 田中様">
+          </div>
+          <div class="field" style="flex:0 0 200px;">
             <label for="member-role">権限 / Role</label>
             <select id="member-role">
               <option value="client_commenter">コメント可 / Can comment</option>
@@ -47,11 +51,17 @@
               <option value="owner">オーナー / Owner</option>
             </select>
           </div>
-          <button class="btn" onclick="addMember()">追加 / Add</button>
+          <button class="btn" onclick="inviteMember()">招待 / Invite</button>
         </div>
         <p style="font-size:12px; color:var(--ink-soft); margin-top:8px;">
-          追加する相手は、先にこのツールでアカウント登録を済ませている必要があります。
+          アカウントが未登録のメールアドレスなら、自動でアカウントを作成しパスワードを生成します。
         </p>
+        <div class="card pw-card" id="pw-reveal" hidden>
+          <div id="pw-title" style="font-weight:700; font-size:14px; margin-bottom:6px;"></div>
+          <code id="pw-value"></code>
+          <button class="btn btn-ghost btn-sm" onclick="copyPassword()" style="margin-left:8px;">コピー / Copy</button>
+          <div class="pw-note">⚠ このパスワードは今回しか表示されません。クライアントに安全な方法で共有してください。</div>
+        </div>
       </div>
       <div class="list" id="member-list"></div>
     </section>
@@ -164,6 +174,7 @@
             </div>
             <div class="item-side">
               <span class="badge badge-ai">${ROLE_LABEL[m.member_role] || m.member_role}</span>
+              ${m.account_role === "client" ? `<button class="btn btn-ghost btn-sm" onclick="resetPassword('${m.user_id}', '${escapeHtml(m.email)}')">PWリセット</button>` : ""}
               <button class="btn btn-ghost btn-sm" onclick="removeMember('${m.user_id}')">削除 / Remove</button>
             </div>
           </div>`).join("");
@@ -172,15 +183,47 @@
       }
     }
 
-    async function addMember() {
+    async function inviteMember() {
       const email = document.getElementById("member-email").value.trim().toLowerCase();
+      const display_name = document.getElementById("member-name").value.trim();
       const member_role = document.getElementById("member-role").value;
       if (!email) { toast("メールアドレスを入力してください", true); return; }
       try {
-        await apiPost(`/api/projects/${projectId}/members`, { email, member_role });
+        const res = await apiPost(`/api/projects/${projectId}/members/invite`, { email, display_name, member_role });
         document.getElementById("member-email").value = "";
-        toast("メンバーを追加しました");
+        document.getElementById("member-name").value = "";
+        if (res.created && res.password) {
+          showPassword(`${res.email} のアカウントを作成しました`, res.password);
+          toast("アカウントを作成し、メンバーに追加しました");
+        } else {
+          hidePassword();
+          toast("既存アカウントをメンバーに追加しました");
+        }
         await loadMembers();
+      } catch (e) {
+        toast(e.message, true);
+      }
+    }
+
+    function showPassword(title, pw) {
+      document.getElementById("pw-title").textContent = title;
+      document.getElementById("pw-value").textContent = pw;
+      document.getElementById("pw-reveal").hidden = false;
+    }
+    function hidePassword() { document.getElementById("pw-reveal").hidden = true; }
+
+    async function copyPassword() {
+      const pw = document.getElementById("pw-value").textContent;
+      try { await navigator.clipboard.writeText(pw); toast("コピーしました"); }
+      catch (e) { toast("コピーできませんでした — 手動で選択してください", true); }
+    }
+
+    async function resetPassword(userId, email) {
+      if (!confirm(`${email} のパスワードをリセットしますか？\n(既存のログインセッションは無効になります)`)) return;
+      try {
+        const res = await apiPost(`/api/members/${userId}/reset-password`);
+        showPassword(`${res.email} の新しいパスワード`, res.password);
+        toast("パスワードをリセットしました");
       } catch (e) {
         toast(e.message, true);
       }

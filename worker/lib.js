@@ -118,6 +118,29 @@ export async function destroySession(db, token) {
   await db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run();
 }
 
+// ---------- generated passwords (client invites) ----------
+// Readable but strong: 2 romaji words + 6 chars from an
+// unambiguous alphabet (no 0/O, 1/l/I). ~2^47 of entropy.
+
+const PW_WORDS = [
+  "sakura","momiji","kaze","yuki","hana","tsuki","hoshi","umi","yama","kawa",
+  "sora","niji","kumo","mori","take","ume","kiku","fuji","nami","hikari",
+  "asahi","yube","haru","natsu","aki","fuyu","tori","koi","tanuki","kitsune",
+  "matsu","ishi","suna","shio","kome","ocha","mochi","yuzu","kaki","nashi",
+];
+const PW_CHARS = "abcdefghjkmnpqrstuvwxyz23456789";
+
+export function generatePassword() {
+  const pick = (arr) => {
+    const a = new Uint32Array(1);
+    crypto.getRandomValues(a);
+    return arr[a[0] % arr.length];
+  };
+  let tail = "";
+  for (let i = 0; i < 6; i++) tail += pick(PW_CHARS);
+  return `${pick(PW_WORDS)}-${pick(PW_WORDS)}-${tail}`;
+}
+
 // ---------- permissions (this is where Supabase RLS moved to) ----------
 
 export const isInternal = (user) => user?.role === "internal";

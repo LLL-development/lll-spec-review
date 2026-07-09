@@ -1,0 +1,72 @@
+feat: Phase 2 — pin comments, threads, and client invites with auto-generated passwords
+
+Adds the contextual comment system (Figma-style pins on uploaded HTML docs)
+and replaces the "sign up first, then be added" member flow with one-step
+invites that auto-create client accounts. No D1 schema changes — the comments
+table and permissions shipped with Phase 1.
+
+## Backend (worker/)
+
+worker/index.js
+- NEW comments API:
+  - GET    /api/documents/:id/comments        list w/ author name + role
+  - POST   /api/documents/:id/comments        create (anchor + body, or reply
+                                              via parent_id); commenter role
+                                              enforced server-side
+  - PATCH  /api/comments/:id                  resolve/unresolve (any commenter),
+                                              edit body (author only)
+  - DELETE /api/comments/:id                  author or internal
+- NEW invite & password management:
+  - POST /api/projects/:id/members/invite     add-by-email; auto-creates the
+                                              account with a generated password
+                                              (returned once) if none exists
+  - POST /api/members/:userId/reset-password  regenerate a client's password,
+                                              revoke all their sessions
+                                              (client accounts only)
+- GET /api/documents/:id now returns can_comment (drives viewer UI)
+- Members list now includes account_role (enables PW-reset button for clients)
+- Route guards added for /api/comments/* and /api/members/*
+
+worker/lib.js
+- NEW generatePassword(): 2 romaji words + 6 unambiguous chars
+  (e.g. momiji-kaze-x7k3n2), crypto.getRandomValues-based
+
+## Frontend
+
+js/overlay.js (NEW)
+- Script injected into every uploaded doc before </body>, runs inside the
+  sandboxed iframe, talks to the viewer only via postMessage (never sees
+  the session cookie)
+- Anchor generation on click: unique #id selector or nth-of-type CSS path
+  + text snippet + relative x/y; works on table cells and SVG elements
+- Anchor resolution: selector first, text-snippet fallback if the doc
+  changed; unresolvable anchors degrade gracefully (sidebar-only)
+- Renders numbered pins (shu red / gray when resolved / indigo draft),
+  scroll-into-view + element flash on focus
+- Comment-mode click capture prevents interactive docs from reacting
+  while placing a pin
+
+viewer.html (rewritten)
+- Comment workspace: 📍 comment-mode toggle, right sidebar with threads
+  (reply / resolve / reopen / delete), "show resolved" filter,
+  unresolved-count badge
+- Compose flow: click in doc → anchored compose box with snippet preview
+- Pin ↔ thread two-way focus (click pin → thread; click 📍 → scroll doc)
+- Overlay injection into fetched HTML before blob rendering
+- Polling: 15s interval + refresh on tab focus
+- Mobile: comment panel becomes a bottom sheet (💬 toolbar button)
+
+project.html
+- Member form is now an invite form (email + display name + role)
+- One-time password reveal card with copy button after auto-creation
+- PWリセット button per client member
+
+css/style.css
+- Comment panel, threads, pins, compose, password-reveal card,
+  mobile bottom-sheet styles
+
+## Docs
+
+README.md
+- Phase 2 features, invite/password flow, Phase 3 outlook
+  (notifications, self-service password change, login rate limiting)
