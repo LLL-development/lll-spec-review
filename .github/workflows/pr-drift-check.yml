@@ -1,0 +1,57 @@
+name: PR Drift Check
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: pr-drift-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify PR review gateway
+        run: |
+          curl -sS --max-time 200 -X POST https://gh.live-laugh-love.tech/pr-review \
+            -H "Authorization: Bearer ${{ secrets.PR_REVIEW_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc \
+                  --arg repo "${{ github.repository }}" \
+                  --argjson pr ${{ github.event.pull_request.number }} \
+                  --arg tok "${{ secrets.GITHUB_TOKEN }}" \
+                  '{repo:$repo, pr:$pr, github_token:$tok}')" \
+            || echo "pr-review-gateway unavailable (non-blocking, skipping)"
+
+  feedback:
+    if: >
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      (startsWith(github.event.comment.body, '/drift') || startsWith(github.event.comment.body, '/qc'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send feedback to gateway
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ACTOR: ${{ github.event.comment.user.login }}
+        run: |
+          curl -sS --max-time 60 -X POST https://gh.live-laugh-love.tech/feedback \
+            -H "Authorization: Bearer ${{ secrets.PR_REVIEW_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc \
+                  --arg repo "${{ github.repository }}" \
+                  --argjson pr ${{ github.event.issue.number }} \
+                  --arg tok "${{ secrets.GITHUB_TOKEN }}" \
+                  --arg body "$COMMENT_BODY" \
+                  --argjson cid ${{ github.event.comment.id }} \
+                  --arg actor "$ACTOR" \
+                  '{repo:$repo, pr:$pr, github_token:$tok, comment:$body, comment_id:$cid, actor:$actor}')" \
+            || echo "feedback send failed (non-blocking)"
