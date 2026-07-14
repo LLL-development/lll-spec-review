@@ -40,9 +40,7 @@
       const profile = await requireAuth();
       if (!profile) return;
       renderHeader();
-      if (isInternal()) {
-        document.getElementById("create-card").style.display = "";
-      }
+      document.getElementById("create-card").style.display = "";
       await loadProjects();
     }
 
@@ -51,7 +49,7 @@
       try {
         const projects = await apiGet("/api/projects");
         if (!projects.length) {
-          listEl.innerHTML = `<div class="empty">プロジェクトがまだありません。${isInternal() ? "上のフォームから作成できます。" : "担当者に招待を依頼してください。 / Ask your contact to invite you."}</div>`;
+          listEl.innerHTML = `<div class="empty">プロジェクトがまだありません。上のフォームから作成できます。<br>Create your first project above.</div>`;
           return;
         }
         listEl.innerHTML = projects.map(p => `

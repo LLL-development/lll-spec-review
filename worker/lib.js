@@ -157,6 +157,17 @@ export async function canAccessProject(db, user, projectId) {
   return isInternal(user) || await isProjectMember(db, user.id, projectId);
 }
 
+// May the user manage this project (upload, members, settings)?
+// Project owners + internal staff.
+export async function isProjectOwner(db, user, projectId) {
+  if (isInternal(user)) return true;
+  const row = await db.prepare(
+    `SELECT 1 FROM project_members
+      WHERE project_id = ? AND user_id = ? AND member_role = 'owner'`
+  ).bind(projectId, user.id).first();
+  return !!row;
+}
+
 // May the user comment? (Phase 2 uses this)
 export async function canCommentOnProject(db, user, projectId) {
   if (isInternal(user)) return true;

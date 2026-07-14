@@ -17,8 +17,8 @@
     <div class="card" id="upload-card" style="display:none; margin-bottom:8px;">
       <div class="form-row">
         <div class="field">
-          <label for="file-input">HTMLファイルをアップロード / Upload HTML</label>
-          <input type="file" id="file-input" accept=".html,.htm,text/html">
+          <label for="file-input">ファイルをアップロード / Upload (HTML, Markdown, テキスト, 画像)</label>
+          <input type="file" id="file-input" accept=".html,.htm,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg">
         </div>
         <button class="btn btn-shu" id="upload-btn" onclick="uploadFile()">アップロード / Upload</button>
       </div>
@@ -84,8 +84,9 @@
       renderHeader();
       if (!projectId) { location.href = "dashboard.html"; return; }
 
+      let project;
       try {
-        const project = await apiGet(`/api/projects/${projectId}`);
+        project = await apiGet(`/api/projects/${projectId}`);
         document.getElementById("project-title").textContent = project.name;
         document.title = `${BRAND.nameJa} — ${project.name}`;
       } catch (e) {
@@ -93,7 +94,7 @@
         return;
       }
 
-      if (isInternal()) {
+      if (project.can_manage) {
         document.getElementById("upload-card").style.display = "";
         document.getElementById("members-section").style.display = "";
         await loadMembers();
@@ -139,7 +140,6 @@
       const btn = document.getElementById("upload-btn");
       const file = input.files[0];
       if (!file) { toast("ファイルを選択してください", true); return; }
-      if (!/\.html?$/i.test(file.name)) { toast("HTMLファイル(.html / .htm)のみ対応です", true); return; }
 
       btn.disabled = true;
       try {
@@ -174,7 +174,7 @@
             </div>
             <div class="item-side">
               <span class="badge badge-ai">${ROLE_LABEL[m.member_role] || m.member_role}</span>
-              ${m.account_role === "client" ? `<button class="btn btn-ghost btn-sm" onclick="resetPassword('${m.user_id}', '${escapeHtml(m.email)}')">PWリセット</button>` : ""}
+              ${m.account_role === "client" && m.user_id !== currentProfile.id ? `<button class="btn btn-ghost btn-sm" onclick="resetPassword('${m.user_id}', '${escapeHtml(m.email)}')">PWリセット</button>` : ""}
               <button class="btn btn-ghost btn-sm" onclick="removeMember('${m.user_id}')">削除 / Remove</button>
             </div>
           </div>`).join("");
@@ -221,7 +221,7 @@
     async function resetPassword(userId, email) {
       if (!confirm(`${email} のパスワードをリセットしますか？\n(既存のログインセッションは無効になります)`)) return;
       try {
-        const res = await apiPost(`/api/members/${userId}/reset-password`);
+        const res = await apiPost(`/api/projects/${projectId}/members/${userId}/reset-password`);
         showPassword(`${res.email} の新しいパスワード`, res.password);
         toast("パスワードをリセットしました");
       } catch (e) {

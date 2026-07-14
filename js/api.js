@@ -42,3 +42,16 @@ async function apiText(path) {
   }
   return res.text();
 }
+
+// binary content → data: URI (for embedding images in the sandbox)
+async function apiDataUri(path) {
+  const res = await fetch(path, { credentials: "same-origin" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error("read failed"));
+    r.readAsDataURL(blob);
+  });
+}

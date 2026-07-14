@@ -29,7 +29,7 @@ import {
   COOKIE_NAME, uuid,
   hashPassword, verifyPassword, generatePassword,
   createSession, getSessionUser, destroySession,
-  isInternal, canAccessProject, canCommentOnProject,
+  isInternal, canAccessProject, canCommentOnProject, isProjectOwner,
 } from "./lib.js";
 
 const app = new Hono();
@@ -183,13 +183,22 @@ app.get("/api/projects", async (c) => {
   return c.json(results);
 });
 
-app.post("/api/projects", requireInternal, async (c) => {
+// Any signed-in user can create a project; the creator becomes
+// its owner (a project_members row), and owners manage everything
+// about their own project. Internal staff remain global admins.
+app.post("/api/projects", async (c) => {
   const { name, client_name } = await c.req.json().catch(() => ({}));
   if (!name?.trim()) return c.json({ error: "プロジェクト名を入力してください" }, 400);
   const id = uuid();
-  await c.env.DB.prepare(
-    "INSERT INTO projects (id, name, client_name, created_by) VALUES (?, ?, ?, ?)"
-  ).bind(id, name.trim(), (client_name || "").trim(), c.get("user").id).run();
+  const userId = c.get("user").id;
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "INSERT INTO projects (id, name, client_name, created_by) VALUES (?, ?, ?, ?)"
+    ).bind(id, name.trim(), (client_name || "").trim(), userId),
+    c.env.DB.prepare(
+      "INSERT INTO project_members (project_id, user_id, member_role) VALUES (?, ?, 'owner')"
+    ).bind(id, userId),
+  ]);
   return c.json({ id });
 });
 
@@ -201,14 +210,22 @@ app.get("/api/projects/:id", async (c) => {
   }
   const project = await c.env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first();
   if (!project) return c.json({ error: "not found" }, 404);
-  return c.json(project);
+  const can_manage = await isProjectOwner(c.env.DB, user, projectId);
+  return c.json({ ...project, can_manage });
 });
 
 // ============================================================
 // MEMBERS (internal only)
 // ============================================================
 
-app.get("/api/projects/:id/members", requireInternal, async (c) => {
+// Gate: project owner (or internal) for management routes
+const requireOwner = async (c, next) => {
+  const ok = await isProjectOwner(c.env.DB, c.get("user"), c.req.param("id"));
+  if (!ok) return c.json({ error: "権限がありません / Forbidden" }, 403);
+  await next();
+};
+
+app.get("/api/projects/:id/members", requireOwner, async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT m.user_id, m.member_role, u.display_name, u.email, u.role AS account_role
        FROM project_members m JOIN users u ON u.id = m.user_id
@@ -217,7 +234,7 @@ app.get("/api/projects/:id/members", requireInternal, async (c) => {
   return c.json(results);
 });
 
-app.post("/api/projects/:id/members", requireInternal, async (c) => {
+app.post("/api/projects/:id/members", requireOwner, async (c) => {
   const { email, member_role } = await c.req.json().catch(() => ({}));
   const roles = ["owner", "client_commenter", "client_viewer"];
   if (!roles.includes(member_role)) return c.json({ error: "invalid role" }, 400);
@@ -237,7 +254,7 @@ app.post("/api/projects/:id/members", requireInternal, async (c) => {
   return c.json({ ok: true });
 });
 
-app.delete("/api/projects/:id/members/:userId", requireInternal, async (c) => {
+app.delete("/api/projects/:id/members/:userId", requireOwner, async (c) => {
   await c.env.DB.prepare(
     "DELETE FROM project_members WHERE project_id = ? AND user_id = ?"
   ).bind(c.req.param("id"), c.req.param("userId")).run();
@@ -260,13 +277,33 @@ app.get("/api/projects/:id/documents", async (c) => {
   return c.json(results);
 });
 
-// Upload: multipart form with a "file" field. Internal only.
-app.post("/api/projects/:id/documents", requireInternal, async (c) => {
+// Supported upload formats. Text-ish formats are stored as
+// text/plain so a pasted URL can never render/execute directly
+// (SVG can carry scripts — treated as text, rendered only inside
+// the sandbox). Binary images keep their real mime.
+const EXT_TYPES = {
+  html: "text/plain; charset=utf-8",
+  htm:  "text/plain; charset=utf-8",
+  md:   "text/plain; charset=utf-8",
+  txt:  "text/plain; charset=utf-8",
+  svg:  "text/plain; charset=utf-8",
+  png:  "image/png",
+  jpg:  "image/jpeg",
+  jpeg: "image/jpeg",
+  gif:  "image/gif",
+  webp: "image/webp",
+};
+
+// Upload: multipart form with a "file" field. Project owners.
+app.post("/api/projects/:id/documents", requireOwner, async (c) => {
   const projectId = c.req.param("id");
   const body = await c.req.parseBody();
   const file = body["file"];
   if (!(file instanceof File)) return c.json({ error: "ファイルがありません" }, 400);
-  if (!/\.html?$/i.test(file.name)) return c.json({ error: "HTMLファイル(.html / .htm)のみ対応です" }, 400);
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  if (!EXT_TYPES[ext]) {
+    return c.json({ error: "対応形式: HTML / Markdown / テキスト / 画像 (png, jpg, gif, webp, svg)" }, 400);
+  }
   if (file.size > 10 * 1024 * 1024) return c.json({ error: "10MB以下にしてください" }, 400);
 
   // version bump per (project, filename)
@@ -276,12 +313,12 @@ app.post("/api/projects/:id/documents", requireInternal, async (c) => {
   const version = (prev?.v || 0) + 1;
 
   const id = uuid();
-  const r2Key = `${projectId}/${id}.html`;
+  const r2Key = `${projectId}/${id}.${ext}`;
 
   // R2 first, then D1 — if the DB write fails we clean up the object,
   // never the other way round (a DB row pointing at nothing = broken doc).
   await c.env.DOCS.put(r2Key, file.stream(), {
-    httpMetadata: { contentType: "text/html; charset=utf-8" },
+    httpMetadata: { contentType: EXT_TYPES[ext] },
   });
   try {
     await c.env.DB.prepare(
@@ -321,11 +358,12 @@ app.get("/api/documents/:id/content", async (c) => {
   }
   const obj = await c.env.DOCS.get(doc.r2_key);
   if (!obj) return c.json({ error: "file missing" }, 404);
+  // Content type was pinned at upload: text-ish formats (incl. HTML
+  // and SVG) are text/plain so this URL can never render as a live
+  // page — the viewer fetches it and renders inside the sandbox.
   return new Response(obj.body, {
     headers: {
-      "Content-Type": "text/plain; charset=utf-8", // plain, NOT text/html:
-      // the browser must never render this URL directly as a page —
-      // the frontend fetches it and renders inside the sandboxed iframe.
+      "Content-Type": obj.httpMetadata?.contentType || "text/plain; charset=utf-8",
       "Cache-Control": "private, no-store",
     },
   });
@@ -445,7 +483,7 @@ app.delete("/api/comments/:id", async (c) => {
 
 // Invite by email. If no account exists, one is created with an
 // auto-generated password — returned ONCE in this response.
-app.post("/api/projects/:id/members/invite", requireInternal, async (c) => {
+app.post("/api/projects/:id/members/invite", requireOwner, async (c) => {
   const { email, display_name, member_role } = await c.req.json().catch(() => ({}));
   const cleanEmail = (email || "").trim().toLowerCase();
   const roles = ["owner", "client_commenter", "client_viewer"];
@@ -475,13 +513,22 @@ app.post("/api/projects/:id/members/invite", requireInternal, async (c) => {
   return c.json({ ok: true, created: !!password, email: cleanEmail, password });
 });
 
-// Regenerate a client's password (e.g. forgotten). Client accounts
-// only — internal staff manage their own. All their sessions are
-// revoked so a lost/shared old password can't linger.
-app.post("/api/members/:userId/reset-password", requireInternal, async (c) => {
+// Regenerate a member's password (e.g. forgotten). Project-scoped:
+// the requester must own THIS project and the target must be a
+// client-account member of it (never an internal account, never
+// yourself — use the account page for that). All target sessions
+// are revoked so a lost/shared old password can't linger.
+app.post("/api/projects/:id/members/:userId/reset-password", requireOwner, async (c) => {
+  const projectId = c.req.param("id");
+  const userId = c.req.param("userId");
+  if (userId === c.get("user").id) {
+    return c.json({ error: "自分のパスワードはアカウント設定から変更してください" }, 400);
+  }
   const target = await c.env.DB.prepare(
-    "SELECT id, role, email FROM users WHERE id = ?"
-  ).bind(c.req.param("userId")).first();
+    `SELECT u.id, u.role, u.email FROM users u
+      JOIN project_members m ON m.user_id = u.id AND m.project_id = ?
+     WHERE u.id = ?`
+  ).bind(projectId, userId).first();
   if (!target) return c.json({ error: "not found" }, 404);
   if (target.role !== "client") return c.json({ error: "クライアントアカウントのみリセットできます" }, 403);
 
