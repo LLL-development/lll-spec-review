@@ -461,3 +461,24 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
   .viewer-toolbar #back-link { padding: 6px 8px; }
   .header-user .btn { padding: 6px 8px; font-size: 11px; }
 }
+
+/* ---------- Google login ---------- */
+.auth-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 18px 0 14px; color: var(--ink-soft); font-size: 12px;
+}
+.auth-divider::before, .auth-divider::after {
+  content: ""; flex: 1; height: 1px; background: var(--line);
+}
+.btn-google { width: 100%; gap: 10px; }
+
+/* ---------- drag & drop upload ---------- */
+.dropzone { transition: border-color .15s, background .15s; border-style: solid; }
+.dropzone .drop-hint {
+  margin-top: 10px; padding: 10px;
+  border: 1.5px dashed var(--line); border-radius: var(--radius);
+  text-align: center; font-size: 12.5px; color: var(--ink-soft);
+  pointer-events: none;
+}
+.dropzone.dragging { border-color: var(--shu); background: #FBF3EC; }
+.dropzone.dragging .drop-hint { border-color: var(--shu); color: var(--shu); }

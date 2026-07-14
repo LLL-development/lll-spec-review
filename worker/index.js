@@ -29,7 +29,7 @@ import {
   COOKIE_NAME, uuid,
   hashPassword, verifyPassword, generatePassword,
   createSession, getSessionUser, destroySession,
-  isInternal, canAccessProject, canCommentOnProject, isProjectOwner,
+  isInternal, canAccessProject, canCommentOnProject, isProjectOwner, randomHex,
 } from "./lib.js";
 
 const app = new Hono();
@@ -167,6 +167,88 @@ app.get("/api/auth/me", async (c) => {
   return c.json(user);
 });
 
+// What auth methods are available (drives the login page UI)
+app.get("/api/auth/config", (c) => {
+  return c.json({ google: !!(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET) });
+});
+
+// ---------- Google OAuth (authorization code flow) ----------
+// Step 1: redirect to Google with a CSRF state we can verify later.
+app.get("/api/auth/google", (c) => {
+  if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_CLIENT_SECRET) {
+    return c.redirect("/index.html?error=google_unconfigured");
+  }
+  const state = randomHex(16);
+  setCookie(c, "lll_oauth_state", state, {
+    httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 600,
+  });
+  const params = new URLSearchParams({
+    client_id: c.env.GOOGLE_CLIENT_ID,
+    redirect_uri: `${c.env.APP_URL}/api/auth/google/callback`,
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+    prompt: "select_account",
+  });
+  return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+// Step 2: Google sends the user back with a one-time code.
+// We exchange it server-side (client secret never leaves the Worker),
+// read the identity from the id_token, and upsert the account.
+app.get("/api/auth/google/callback", async (c) => {
+  const { code, state } = c.req.query();
+  const savedState = getCookie(c, "lll_oauth_state");
+  deleteCookie(c, "lll_oauth_state", { path: "/" });
+  if (!code || !state || state !== savedState) {
+    return c.redirect("/index.html?error=google");
+  }
+
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: c.env.GOOGLE_CLIENT_ID,
+      client_secret: c.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: `${c.env.APP_URL}/api/auth/google/callback`,
+      grant_type: "authorization_code",
+    }),
+  });
+  if (!tokenRes.ok) return c.redirect("/index.html?error=google");
+  const { id_token } = await tokenRes.json();
+  if (!id_token) return c.redirect("/index.html?error=google");
+
+  // The id_token came to us directly from Google over TLS in the code
+  // exchange, so its claims are trustworthy without JWKS verification.
+  let claims;
+  try {
+    const b64 = id_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    claims = JSON.parse(atob(b64.padEnd(b64.length + (4 - b64.length % 4) % 4, "=")));
+  } catch (_) {
+    return c.redirect("/index.html?error=google");
+  }
+  const email = (claims.email || "").toLowerCase();
+  if (!email || claims.email_verified === false) {
+    return c.redirect("/index.html?error=google");
+  }
+
+  let user = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
+  if (!user) {
+    const id = uuid();
+    // Google-only accounts get an unusable random password; they can
+    // always sign in via Google. (Password can be set later if needed.)
+    await c.env.DB.prepare(
+      "INSERT INTO users (id, email, display_name, role, password_hash) VALUES (?, ?, ?, 'client', ?)"
+    ).bind(id, email, claims.name || email.split("@")[0], await hashPassword(randomHex(32))).run();
+    user = { id };
+  }
+
+  const { token } = await createSession(c.env.DB, user.id);
+  setCookie(c, COOKIE_NAME, token, cookieOpts);
+  return c.redirect("/dashboard.html");
+});
+
 // ============================================================
 // PROJECTS
 // ============================================================
@@ -255,6 +337,9 @@ app.post("/api/projects/:id/members", requireOwner, async (c) => {
 });
 
 app.delete("/api/projects/:id/members/:userId", requireOwner, async (c) => {
+  if (c.req.param("userId") === c.get("user").id) {
+    return c.json({ error: "自分自身は削除できません / You can't remove yourself" }, 400);
+  }
   await c.env.DB.prepare(
     "DELETE FROM project_members WHERE project_id = ? AND user_id = ?"
   ).bind(c.req.param("id"), c.req.param("userId")).run();

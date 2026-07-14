@@ -87,6 +87,24 @@ npx wrangler d1 execute lll-spec-review --remote --command \
   "UPDATE users SET role='internal' WHERE email IN ('philip@lll.example','tata@lll.example');"
 ```
 
+## Google login (optional)
+
+Email/password always works; Google sign-in appears on the login page only
+when configured:
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services →
+   OAuth consent screen (External, app name, your email) → Credentials →
+   Create Credentials → **OAuth client ID** → type "Web application".
+2. Authorized redirect URI — exactly:
+   `https://lll-spec-review.<subdomain>.workers.dev/api/auth/google/callback`
+3. Put the **Client ID** in wrangler.jsonc vars (`GOOGLE_CLIENT_ID`), and the
+   **Client secret** in: `npx wrangler secret put GOOGLE_CLIENT_SECRET`
+   (or Dashboard → Worker → Settings → Variables and Secrets).
+
+First Google sign-in auto-creates the account (name/email from Google).
+Existing email/password accounts with the same email just sign in — no
+duplicate accounts.
+
 ## Client onboarding flow
 
 1. Client signs up on the login page (name + email + password — no email confirmation dance).

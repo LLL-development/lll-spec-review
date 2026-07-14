@@ -29,14 +29,15 @@ function renderHeader() {
   const el = document.getElementById("app-header");
   if (!el) return;
   const name = currentProfile ? escapeHtml(currentProfile.display_name || currentProfile.email) : "";
-  const roleLabel = isInternal() ? "社内 / Internal" : "クライアント / Client";
+  // Only staff accounts get a role tag — regular users just see their name
+  const roleTag = isInternal() ? `<span class="user-role">LLL Staff</span>` : "";
   el.innerHTML = `
     <a class="brand" href="dashboard.html">
       <span class="hanko">${escapeHtml(BRAND.mark)}</span>
       <span class="brand-text"><strong>${escapeHtml(BRAND.nameJa)}</strong><small>${escapeHtml(BRAND.nameEn)} — ${escapeHtml(BRAND.tagline)}</small></span>
     </a>
     <div class="header-user">
-      <span class="user-chip"><span class="user-name">${name}</span><span class="user-role">${roleLabel}</span></span>
+      <span class="user-chip"><span class="user-name">${name}</span>${roleTag}</span>
       <a class="btn btn-ghost btn-sm" href="account.html">アカウント</a>
       <button class="btn btn-ghost btn-sm" onclick="signOut()">ログアウト / Sign out</button>
     </div>`;

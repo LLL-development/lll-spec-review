@@ -14,14 +14,15 @@
     <h1 class="page-title" id="project-title">読み込み中…</h1>
 
     <!-- Upload (internal only) -->
-    <div class="card" id="upload-card" style="display:none; margin-bottom:8px;">
+    <div class="card dropzone" id="upload-card" style="display:none; margin-bottom:8px;">
       <div class="form-row">
         <div class="field">
           <label for="file-input">ファイルをアップロード / Upload (HTML, Markdown, テキスト, 画像)</label>
-          <input type="file" id="file-input" accept=".html,.htm,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg">
+          <input type="file" id="file-input" multiple accept=".html,.htm,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg">
         </div>
-        <button class="btn btn-shu" id="upload-btn" onclick="uploadFile()">アップロード / Upload</button>
+        <button class="btn btn-shu" id="upload-btn" onclick="uploadSelected()">アップロード / Upload</button>
       </div>
+      <div class="drop-hint">⬇ ここにファイルをドラッグ&ドロップでもOK / or drag &amp; drop files here</div>
       <p style="font-size:12px; color:var(--ink-soft); margin-top:8px;">
         同じファイル名で再アップロードすると、新しいバージョンとして保存されます。
       </p>
@@ -135,26 +136,54 @@
       }
     }
 
-    async function uploadFile() {
+    async function uploadSelected() {
       const input = document.getElementById("file-input");
-      const btn = document.getElementById("upload-btn");
-      const file = input.files[0];
-      if (!file) { toast("ファイルを選択してください", true); return; }
+      if (!input.files.length) { toast("ファイルを選択してください", true); return; }
+      await uploadFiles(input.files);
+      input.value = "";
+    }
 
+    async function uploadFiles(fileList) {
+      const btn = document.getElementById("upload-btn");
       btn.disabled = true;
+      let ok = 0, fail = 0;
       try {
-        const fd = new FormData();
-        fd.append("file", file);
-        const res = await apiUpload(`/api/projects/${projectId}/documents`, fd);
-        input.value = "";
-        toast(`${file.name} を v${res.version} として保存しました`);
+        for (const file of fileList) {
+          try {
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await apiUpload(`/api/projects/${projectId}/documents`, fd);
+            toast(`${file.name} → v${res.version}`);
+            ok++;
+          } catch (e) {
+            toast(`${file.name}: ${e.message}`, true);
+            fail++;
+          }
+        }
+        if (fileList.length > 1) {
+          toast(`完了: ${ok}件成功${fail ? ` / ${fail}件失敗` : ""}`, fail > 0);
+        }
         await loadDocuments();
-      } catch (e) {
-        toast("アップロード失敗: " + e.message, true);
       } finally {
         btn.disabled = false;
       }
     }
+
+    // Drag & drop onto the upload card
+    (function initDropzone() {
+      const zone = document.getElementById("upload-card");
+      let depth = 0;
+      zone.addEventListener("dragenter", (e) => { e.preventDefault(); depth++; zone.classList.add("dragging"); });
+      zone.addEventListener("dragover", (e) => { e.preventDefault(); });
+      zone.addEventListener("dragleave", () => { if (--depth <= 0) { depth = 0; zone.classList.remove("dragging"); } });
+      zone.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        depth = 0;
+        zone.classList.remove("dragging");
+        const files = [...(e.dataTransfer?.files || [])];
+        if (files.length) await uploadFiles(files);
+      });
+    })();
 
     // ---------- members ----------
 
@@ -175,7 +204,7 @@
             <div class="item-side">
               <span class="badge badge-ai">${ROLE_LABEL[m.member_role] || m.member_role}</span>
               ${m.account_role === "client" && m.user_id !== currentProfile.id ? `<button class="btn btn-ghost btn-sm" onclick="resetPassword('${m.user_id}', '${escapeHtml(m.email)}')">PWリセット</button>` : ""}
-              <button class="btn btn-ghost btn-sm" onclick="removeMember('${m.user_id}')">削除 / Remove</button>
+              ${m.user_id !== currentProfile.id ? `<button class="btn btn-ghost btn-sm" onclick="removeMember('${m.user_id}')">削除 / Remove</button>` : `<span class="badge">あなた / You</span>`}
             </div>
           </div>`).join("");
       } catch (e) {
