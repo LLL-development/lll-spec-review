@@ -1,92 +1,194 @@
-# 朱入れ (Shuire) — HTML Spec Review Tool
+# lll-spec-review  (brand: 朱入れ / Shuire)
 
-Phase 1: Viewer + Auth. Pure HTML/CSS/JS frontend + Supabase backend.
+Logical name everywhere in code & infra: **`lll-spec-review`** (Worker, D1, R2, cookie).
+The user-facing brand 朱入れ lives ONLY in `js/brand.js` — rebrand = edit one file.
 
-「朱入れ」= the traditional practice of marking up manuscripts in red ink — which is exactly what this tool is for.
+Phase 1 on a **100% Cloudflare stack**: one Worker serves the API *and* the static frontend.
+Backend: Workers + D1 (SQLite) + R2 (file storage). Expected cost: **$0/month**.
+
+「朱入れ」= marking up manuscripts in red ink — which is exactly what this tool is for.
+
+## Architecture
+
+```
+Browser ──fetch──▶ Cloudflare Worker (lll-spec-review)
+                    ├── /api/*  → worker/index.js (Hono)
+                    │     ├── D1  "lll-spec-review"            ← users, sessions, projects, docs
+                    │     └── R2  "lll-spec-review-documents"  ← the uploaded HTML files
+                    └── /*      → dist/ (static assets: the frontend)
+```
+
+- **Auth**: email + password. PBKDF2-hashed passwords, random session tokens in an
+  httpOnly cookie, only the token's SHA-256 hash stored in D1.
+- **Permissions**: enforced in the Worker (`worker/lib.js`) — internal staff see all
+  projects; clients see only projects they're members of. The browser never talks
+  to the database directly.
+- **Files**: R2 keys are `{project_id}/{document_id}.html`; downloads always go
+  through an access-checked API route, never a public URL.
+- **Sandboxing**: specs render in `<iframe sandbox="allow-scripts allow-popups">` —
+  interactive mocks work, but scripts get an opaque origin and can't touch the
+  session cookie (which is httpOnly anyway — belt and suspenders).
 
 ## Files
 
 ```
-shuire/
-├── schema.sql        ← run this in Supabase SQL Editor
-├── index.html        ← login / signup
-├── dashboard.html    ← project list + create (internal only)
-├── project.html      ← documents, upload w/ versioning, member management
-├── viewer.html       ← sandboxed iframe viewer + version switcher
-├── js/
-│   ├── config.js     ← ⚠ fill in your Supabase URL + anon key
-│   └── app.js        ← shared helpers (auth guard, header, utils)
-└── css/
-    └── style.css
+lll-spec-review/
+├── .github/workflows/deploy.yml  ← cloud deploys (for Termux / CI)
+├── wrangler.jsonc      ← Worker config (⚠ paste your D1 database_id)
+├── package.json        ← hono + wrangler, npm scripts
+├── schema.sql          ← D1 schema
+├── build.sh            ← copies frontend → dist/
+├── worker/
+│   ├── index.js        ← all API routes (Hono)
+│   └── lib.js          ← passwords, sessions, permission helpers
+├── index.html          ← login / signup
+├── dashboard.html      ← project list + create
+├── project.html        ← docs, upload w/ versioning, members
+├── viewer.html         ← sandboxed viewer + version switcher
+├── js/  (api.js, app.js, brand.js ← the brand lives here)
+└── css/ (style.css)
 ```
 
-## Setup (≈10 minutes)
-
-### 1. Create a Supabase project
-supabase.com → New project (Singapore region is closest to JB).
-
-### 2. Run the schema
-Supabase Dashboard → SQL Editor → paste the contents of `schema.sql` → Run.
-This creates all tables, RLS policies, the signup trigger, and the private `documents` storage bucket.
-
-### 3. Configure auth
-Dashboard → Authentication → Sign In / Up:
-- Email provider: enabled (default)
-- Optional: turn **off** "Confirm email" while testing, so signups work instantly.
-
-### 4. Fill in `js/config.js`
-Dashboard → Project Settings → API → copy Project URL and anon public key.
-
-### 5. Deploy to Cloudflare Pages
-
-Connect the repo to Cloudflare Pages and configure:
-
-| Setting | Value |
-|---|---|
-| Build command | `bash ./build.sh` |
-| Build output directory | `dist` |
-| Environment variables | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
-
-`build.sh` copies everything into `./dist` and injects the two env vars into
-`js/config.js` at build time — so you never commit real keys to the repo.
-(If the env vars aren't set, it falls back to whatever is written in `js/config.js`
-and prints a warning. To make missing config a hard CI failure, uncomment the
-`exit 1` line in the script.)
-
-A `_headers` file with basic security headers is included and copied into `dist`
-automatically — Cloudflare Pages picks it up on deploy.
-
-Local testing:
+## Setup (~15 minutes)
 
 ```bash
-bash ./build.sh
-cd dist && python3 -m http.server 8000
+npm install
+npx wrangler login                       # opens browser, auth with your CF account
+
+# 1. Create the database and paste its id into wrangler.jsonc
+npx wrangler d1 create lll-spec-review            # → copy "database_id" into wrangler.jsonc
+
+# 2. Create the file bucket
+npx wrangler r2 bucket create lll-spec-review-documents
+
+# 3. Apply the schema (remote = the real DB)
+npm run db:remote
+
+# 4. Ship it
+npm run deploy                           # builds dist/ then wrangler deploy
 ```
 
-### 6. Bootstrap your internal team
-Everyone (including you) signs up once via the app, then promote internal members in the SQL Editor:
+Your app is now live at `https://lll-spec-review.<your-subdomain>.workers.dev`
+(custom domain attachable in the Cloudflare dashboard → Workers → lll-spec-review → Domains).
 
-```sql
-update public.profiles set role = 'internal'
-where email in ('philip@lll.example', 'tata@lll.example');
+### Local development
+
+```bash
+npm run db:local     # apply schema to the local dev DB (first time only)
+npm run dev          # http://localhost:8787 — local D1 + local R2, full stack
 ```
 
-New signups default to `client` — they see nothing until an internal user adds them to a project.
+### Bootstrap your internal team
 
-## How it works
+Everyone signs up once via the app (new accounts default to `client`), then promote:
 
-- **Roles**: `internal` = full access to all projects. `client` = only projects they're a member of (`project_members`), enforced by Postgres RLS — not just the UI.
-- **Versioning**: re-uploading a file with the same name creates v2, v3… The viewer has a version switcher.
-- **Storage**: files live in a private bucket at `{project_id}/{document_id}.html`; downloads go through RLS-checked storage policies.
-- **Sandboxing**: uploaded HTML renders in `<iframe sandbox="allow-scripts allow-popups">` — scripts inside the doc run (so interactive mocks like まいぷれ work), but the doc gets an opaque origin and **cannot** touch the app's session/localStorage.
+```bash
+npx wrangler d1 execute lll-spec-review --remote --command \
+  "UPDATE users SET role='internal' WHERE email IN ('philip@lll.example','tata@lll.example');"
+```
 
 ## Client onboarding flow
 
-1. Client signs up at the login page (name + email + password).
-2. You add them on the project page by email, choosing a role (view only / can comment).
+1. Client signs up on the login page (name + email + password — no email confirmation dance).
+2. You add them on the project page by email, picking a role (view only / can comment).
 3. They log in → see only their project(s).
 
-## Next: Phase 2 (comments)
+## Working from Termux (Android)
 
-The `comments` table and its RLS policies are already in the schema, including the `client_viewer` vs `client_commenter` distinction — so Phase 2 is purely frontend work:
-pin placement via postMessage into the iframe, selector generation, threads, resolve, Supabase Realtime.
+What works and what doesn't, honestly:
+
+| Command | Termux? | Why |
+|---|---|---|
+| `npm install` | ✅ | wrangler installs; `workerd` is an optional dep with no Android build — npm skips it with a warning, that's fine |
+| `npx wrangler login` | ⚠️ | The browser round-trip can be flaky; the reliable way is an API token: `export CLOUDFLARE_API_TOKEN=...` in `~/.bashrc` |
+| `npx wrangler d1/r2 ...` (remote) | ✅ | Pure API calls |
+| `npm run deploy` | ✅* | Bundling uses esbuild, which ships Android ARM64 binaries |
+| `npm run dev` (local) | ❌ | Local dev runs `workerd`, Cloudflare's runtime — no Android build exists |
+| `npx wrangler dev --remote` | ✅ | Dev session runs on Cloudflare's edge instead; Termux is just the terminal |
+
+\* If deploy ever breaks on your device (esbuild binary issues after an Android update), don't fight it — use the cloud path below.
+
+Termux prep:
+
+```bash
+pkg install nodejs-lts git
+git clone <your repo> && cd lll-spec-review
+npm install
+export CLOUDFLARE_API_TOKEN=your-token   # → dash.cloudflare.com → My Profile → API Tokens
+npm run deploy
+```
+
+### Plan B: deploy from GitHub Actions (zero local requirements)
+
+`.github/workflows/deploy.yml` is included. Push to `main` → GitHub builds and deploys.
+Termux then only needs `git` — or you can even edit on github.com from the phone.
+
+Setup once:
+1. Push this repo to GitHub.
+2. Repo → Settings → Secrets and variables → Actions → add `CLOUDFLARE_API_TOKEN`
+   (token template "Edit Cloudflare Workers", plus Account → D1 → Edit permission).
+3. First-time DB setup: Actions tab → Deploy → Run workflow → tick "apply schema".
+
+After that, every `git push` deploys. Termux becomes a thin git client, which it is genuinely good at.
+
+## Costs
+
+Workers Free: 100k requests/day. D1 Free: 5GB + 5M row reads/day. R2 Free: 10GB
+storage, zero egress fees. A client review tool won't scratch any of these.
+If you ever outgrow Free, the Workers paid plan is $5/mo — and lets you raise
+`PBKDF2_ITERATIONS` in `worker/lib.js` for stronger password hashing.
+
+## Phase 2: Comments (implemented)
+
+- **Pin comments**: toggle コメントモード in the viewer, click anywhere in the
+  document (tables, SVG shapes, anything) → a numbered pin + threaded comment.
+- **Anchoring**: each comment stores a CSS selector + a text snippet + relative
+  x/y. Selector resolves first; if the doc changed, text-snippet matching takes
+  over; if both fail the comment still shows in the sidebar (just unpinned).
+- **Threads**: replies, resolve/reopen, delete (author or internal). Resolved
+  threads are hidden by default. LLL staff get an internal badge.
+- **Overlay isolation**: `js/overlay.js` is injected into the doc inside the
+  sandboxed iframe and talks to the viewer only via postMessage — it never sees
+  the session cookie.
+- **Updates**: light polling (15s + on tab focus). No websockets to babysit.
+- **Mobile**: the comment panel becomes a bottom sheet (💬 button in toolbar).
+
+## Client invites with auto-generated passwords
+
+On the project page, invite by email:
+- Email already registered → added to the project.
+- Not registered → account auto-created with a generated password
+  (e.g. `momiji-kaze-x7k3n2`), shown **once** with a copy button. Share it with
+  the client through a safe channel.
+- Forgot it? **PWリセット** next to any client member generates a fresh one and
+  revokes their old sessions.
+
+## Phase 3: Notifications (implemented)
+
+New comment/reply → all project members + project creator + document uploader
+(minus the author) are notified, in the background via `waitUntil` so posting
+stays instant. Both channels are optional — unset = silently skipped:
+
+| Channel | Setup |
+|---|---|
+| Email (Resend) | `npx wrangler secret put RESEND_API_KEY` — free tier 100/day. Set `MAIL_FROM` in wrangler.jsonc vars (default `onboarding@resend.dev` works for testing; verify your domain in Resend for production). |
+| Webhook (Lorely etc.) | `npx wrangler secret put NOTIFY_WEBHOOK_URL` — posts JSON `{"text": "..."}`, Slack-compatible shape. Needs an inbound webhook URL/token on the Lorely side. |
+
+Also set `APP_URL` in wrangler.jsonc vars so notification links point at your
+deployment (already set to the philip-81c workers.dev URL).
+
+## Phase 4: Account & hardening (implemented)
+
+- **Password change** (`account.html`, linked from the header): verifies the
+  current password, then revokes all sessions and issues a fresh one.
+- **Login rate limiting**: 5 failed attempts per email per 15 min → 429.
+  Requires migration `migrations/0002-login-attempts.sql` (login degrades
+  gracefully to no-rate-limit until it's applied).
+- Mobile toolbar polish (ellipsized doc names, tighter touch targets).
+
+### Applying migrations
+
+Actions tab → Deploy → Run workflow → set **sql_file** to
+`migrations/0002-login-attempts.sql` → Run. (Or paste the file into the D1
+Console.) The old "apply schema" checkbox became this input — pass
+`schema.sql` for first-time setup.

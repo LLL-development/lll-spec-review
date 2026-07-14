@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>__BRAND__ — アカウント</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header id="app-header"></header>
+
+  <main class="container" style="max-width:560px;">
+    <div class="eyebrow">Account</div>
+    <h1 class="page-title">アカウント設定</h1>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div class="item-sub" style="margin-bottom:4px;">ログイン中 / Signed in as</div>
+      <div class="item-title" id="acc-name">—</div>
+      <div class="item-sub" id="acc-email"></div>
+    </div>
+
+    <h2 class="section-title">パスワード変更 / Change password</h2>
+    <div class="card">
+      <div class="field">
+        <label for="pw-current">現在のパスワード / Current password</label>
+        <input type="password" id="pw-current" autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label for="pw-new">新しいパスワード / New password (8文字以上)</label>
+        <input type="password" id="pw-new" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="pw-confirm">新しいパスワード(確認) / Confirm</label>
+        <input type="password" id="pw-confirm" autocomplete="new-password">
+      </div>
+      <button class="btn" id="pw-btn" onclick="changePassword()">変更する / Change</button>
+      <p style="font-size:12px; color:var(--ink-soft); margin-top:10px;">
+        変更すると他の端末のログインはすべて無効になります。
+      </p>
+    </div>
+  </main>
+
+  <script src="js/brand.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    async function init() {
+      const profile = await requireAuth();
+      if (!profile) return;
+      renderHeader();
+      document.getElementById("acc-name").textContent = profile.display_name || "—";
+      document.getElementById("acc-email").textContent = profile.email;
+    }
+
+    async function changePassword() {
+      const current_password = document.getElementById("pw-current").value;
+      const new_password = document.getElementById("pw-new").value;
+      const confirm = document.getElementById("pw-confirm").value;
+      if (new_password !== confirm) { toast("確認用パスワードが一致しません", true); return; }
+      const btn = document.getElementById("pw-btn");
+      btn.disabled = true;
+      try {
+        await apiPost("/api/auth/change-password", { current_password, new_password });
+        ["pw-current","pw-new","pw-confirm"].forEach(id => document.getElementById(id).value = "");
+        toast("パスワードを変更しました");
+      } catch (e) {
+        toast(e.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

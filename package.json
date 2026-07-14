@@ -1,0 +1,19 @@
+{
+  "name": "lll-spec-review",
+  "private": true,
+  "version": "0.2.0",
+  "description": "朱入れ (Shuire) — HTML spec review tool on Cloudflare Workers + D1 + R2",
+  "scripts": {
+    "build": "bash ./build.sh",
+    "dev": "bash ./build.sh && wrangler dev",
+    "deploy": "bash ./build.sh && wrangler deploy",
+    "db:local": "wrangler d1 execute lll-spec-review --file=./schema.sql",
+    "db:remote": "wrangler d1 execute lll-spec-review --remote --file=./schema.sql"
+  },
+  "dependencies": {
+    "hono": "^4"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

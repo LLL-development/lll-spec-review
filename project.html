@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>朱入れ Shuire — プロジェクト</title>
+  <title>__BRAND__ — プロジェクト</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -17,8 +17,8 @@
     <div class="card" id="upload-card" style="display:none; margin-bottom:8px;">
       <div class="form-row">
         <div class="field">
-          <label for="file-input">HTMLファイルをアップロード / Upload HTML</label>
-          <input type="file" id="file-input" accept=".html,.htm,text/html">
+          <label for="file-input">ファイルをアップロード / Upload (HTML, Markdown, テキスト, 画像)</label>
+          <input type="file" id="file-input" accept=".html,.htm,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg">
         </div>
         <button class="btn btn-shu" id="upload-btn" onclick="uploadFile()">アップロード / Upload</button>
       </div>
@@ -36,10 +36,14 @@
       <div class="card" style="margin-bottom:12px;">
         <div class="form-row">
           <div class="field">
-            <label for="member-email">メールアドレスで追加 / Add by email</label>
+            <label for="member-email">メールアドレス / Email</label>
             <input type="email" id="member-email" placeholder="client@example.com">
           </div>
-          <div class="field" style="flex:0 0 220px;">
+          <div class="field">
+            <label for="member-name">表示名 / Name (新規の場合)</label>
+            <input type="text" id="member-name" placeholder="例: 田中様">
+          </div>
+          <div class="field" style="flex:0 0 200px;">
             <label for="member-role">権限 / Role</label>
             <select id="member-role">
               <option value="client_commenter">コメント可 / Can comment</option>
@@ -47,18 +51,24 @@
               <option value="owner">オーナー / Owner</option>
             </select>
           </div>
-          <button class="btn" onclick="addMember()">追加 / Add</button>
+          <button class="btn" onclick="inviteMember()">招待 / Invite</button>
         </div>
         <p style="font-size:12px; color:var(--ink-soft); margin-top:8px;">
-          追加する相手は、先にこのツールでアカウント登録を済ませている必要があります。
+          アカウントが未登録のメールアドレスなら、自動でアカウントを作成しパスワードを生成します。
         </p>
+        <div class="card pw-card" id="pw-reveal" hidden>
+          <div id="pw-title" style="font-weight:700; font-size:14px; margin-bottom:6px;"></div>
+          <code id="pw-value"></code>
+          <button class="btn btn-ghost btn-sm" onclick="copyPassword()" style="margin-left:8px;">コピー / Copy</button>
+          <div class="pw-note">⚠ このパスワードは今回しか表示されません。クライアントに安全な方法で共有してください。</div>
+        </div>
       </div>
       <div class="list" id="member-list"></div>
     </section>
   </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js"></script>
+  <script src="js/brand.js"></script>
+  <script src="js/api.js"></script>
   <script src="js/app.js"></script>
   <script>
     const projectId = qs("id");
@@ -69,21 +79,22 @@
     };
 
     async function init() {
-      const auth = await requireAuth();
-      if (!auth) return;
+      const profile = await requireAuth();
+      if (!profile) return;
       renderHeader();
       if (!projectId) { location.href = "dashboard.html"; return; }
 
-      const { data: project, error } = await sb
-        .from("projects").select("*").eq("id", projectId).single();
-      if (error || !project) {
+      let project;
+      try {
+        project = await apiGet(`/api/projects/${projectId}`);
+        document.getElementById("project-title").textContent = project.name;
+        document.title = `${BRAND.nameJa} — ${project.name}`;
+      } catch (e) {
         document.getElementById("project-title").textContent = "プロジェクトが見つかりません";
         return;
       }
-      document.getElementById("project-title").textContent = project.name;
-      document.title = `朱入れ — ${project.name}`;
 
-      if (isInternal()) {
+      if (project.can_manage) {
         document.getElementById("upload-card").style.display = "";
         document.getElementById("members-section").style.display = "";
         await loadMembers();
@@ -95,33 +106,33 @@
 
     async function loadDocuments() {
       const el = document.getElementById("doc-list");
-      const { data: docs, error } = await sb
-        .from("documents")
-        .select("id, filename, version, uploaded_at")
-        .eq("project_id", projectId)
-        .order("filename").order("version", { ascending: false });
+      try {
+        const docs = await apiGet(`/api/projects/${projectId}/documents`);
+        if (!docs.length) {
+          el.innerHTML = `<div class="empty">ドキュメントはまだありません。 / No documents yet.</div>`;
+          return;
+        }
+        // group by filename → show latest version, link to viewer
+        const groups = {};
+        for (const d of docs) (groups[d.filename] ??= []).push(d);
 
-      if (error) { el.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`; return; }
-      if (!docs.length) { el.innerHTML = `<div class="empty">ドキュメントはまだありません。 / No documents yet.</div>`; return; }
-
-      // group by filename → show latest version, link to viewer
-      const groups = {};
-      for (const d of docs) (groups[d.filename] ??= []).push(d);
-
-      el.innerHTML = Object.entries(groups).map(([filename, versions]) => {
-        const latest = versions[0];
-        return `
-          <a class="list-item" href="viewer.html?doc=${latest.id}">
-            <div class="item-main">
-              <div class="item-title">${escapeHtml(filename)}</div>
-              <div class="item-sub">最終更新 ${fmtDate(latest.uploaded_at)}</div>
-            </div>
-            <div class="item-side">
-              <span class="badge badge-shu">v${latest.version}</span>
-              <span class="badge">${versions.length} version${versions.length > 1 ? "s" : ""}</span>
-            </div>
-          </a>`;
-      }).join("");
+        el.innerHTML = Object.entries(groups).map(([filename, versions]) => {
+          const latest = versions[0];
+          return `
+            <a class="list-item" href="viewer.html?doc=${latest.id}">
+              <div class="item-main">
+                <div class="item-title">${escapeHtml(filename)}</div>
+                <div class="item-sub">最終更新 ${fmtDate(latest.uploaded_at)}</div>
+              </div>
+              <div class="item-side">
+                <span class="badge badge-shu">v${latest.version}</span>
+                <span class="badge">${versions.length} version${versions.length > 1 ? "s" : ""}</span>
+              </div>
+            </a>`;
+        }).join("");
+      } catch (e) {
+        el.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+      }
     }
 
     async function uploadFile() {
@@ -129,53 +140,17 @@
       const btn = document.getElementById("upload-btn");
       const file = input.files[0];
       if (!file) { toast("ファイルを選択してください", true); return; }
-      if (!/\.html?$/i.test(file.name)) { toast("HTMLファイル(.html / .htm)のみ対応です", true); return; }
 
       btn.disabled = true;
       try {
-        // next version for this filename
-        const { data: prev, error: qErr } = await sb
-          .from("documents")
-          .select("version")
-          .eq("project_id", projectId)
-          .eq("filename", file.name)
-          .order("version", { ascending: false })
-          .limit(1);
-        if (qErr) throw qErr;
-        const version = prev.length ? prev[0].version + 1 : 1;
-
-        // create row first to get an id for the storage path
-        const { data: doc, error: insErr } = await sb
-          .from("documents")
-          .insert({
-            project_id: projectId,
-            filename: file.name,
-            storage_path: "pending",
-            version,
-            uploaded_by: currentUser.id
-          })
-          .select()
-          .single();
-        if (insErr) throw insErr;
-
-        const path = `${projectId}/${doc.id}.html`;
-        const { error: upErr } = await sb.storage
-          .from("documents")
-          .upload(path, file, { contentType: "text/html", upsert: false });
-        if (upErr) {
-          await sb.from("documents").delete().eq("id", doc.id); // rollback
-          throw upErr;
-        }
-
-        const { error: updErr } = await sb
-          .from("documents").update({ storage_path: path }).eq("id", doc.id);
-        if (updErr) throw updErr;
-
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await apiUpload(`/api/projects/${projectId}/documents`, fd);
         input.value = "";
-        toast(`${file.name} を v${version} として保存しました`);
+        toast(`${file.name} を v${res.version} として保存しました`);
         await loadDocuments();
       } catch (e) {
-        toast("アップロード失敗: " + (e.message || e), true);
+        toast("アップロード失敗: " + e.message, true);
       } finally {
         btn.disabled = false;
       }
@@ -185,55 +160,83 @@
 
     async function loadMembers() {
       const el = document.getElementById("member-list");
-      const { data: members, error } = await sb
-        .from("project_members")
-        .select("user_id, member_role, profiles(display_name, email)")
-        .eq("project_id", projectId);
-
-      if (error) { el.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`; return; }
-      if (!members.length) { el.innerHTML = `<div class="empty">クライアントメンバーはまだいません。</div>`; return; }
-
-      el.innerHTML = members.map(m => `
-        <div class="list-item">
-          <div class="item-main">
-            <div class="item-title">${escapeHtml(m.profiles?.display_name || "—")}</div>
-            <div class="item-sub">${escapeHtml(m.profiles?.email || "")}</div>
-          </div>
-          <div class="item-side">
-            <span class="badge badge-ai">${ROLE_LABEL[m.member_role] || m.member_role}</span>
-            <button class="btn btn-ghost btn-sm" onclick="removeMember('${m.user_id}')">削除 / Remove</button>
-          </div>
-        </div>`).join("");
+      try {
+        const members = await apiGet(`/api/projects/${projectId}/members`);
+        if (!members.length) {
+          el.innerHTML = `<div class="empty">クライアントメンバーはまだいません。</div>`;
+          return;
+        }
+        el.innerHTML = members.map(m => `
+          <div class="list-item">
+            <div class="item-main">
+              <div class="item-title">${escapeHtml(m.display_name || "—")}</div>
+              <div class="item-sub">${escapeHtml(m.email || "")}</div>
+            </div>
+            <div class="item-side">
+              <span class="badge badge-ai">${ROLE_LABEL[m.member_role] || m.member_role}</span>
+              ${m.account_role === "client" && m.user_id !== currentProfile.id ? `<button class="btn btn-ghost btn-sm" onclick="resetPassword('${m.user_id}', '${escapeHtml(m.email)}')">PWリセット</button>` : ""}
+              <button class="btn btn-ghost btn-sm" onclick="removeMember('${m.user_id}')">削除 / Remove</button>
+            </div>
+          </div>`).join("");
+      } catch (e) {
+        el.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+      }
     }
 
-    async function addMember() {
+    async function inviteMember() {
       const email = document.getElementById("member-email").value.trim().toLowerCase();
-      const role = document.getElementById("member-role").value;
+      const display_name = document.getElementById("member-name").value.trim();
+      const member_role = document.getElementById("member-role").value;
       if (!email) { toast("メールアドレスを入力してください", true); return; }
-
-      const { data: profile, error: pErr } = await sb
-        .from("profiles").select("id").eq("email", email).maybeSingle();
-      if (pErr) { toast(pErr.message, true); return; }
-      if (!profile) { toast("そのメールアドレスのユーザーが見つかりません。先にアカウント登録が必要です。", true); return; }
-
-      const { error } = await sb.from("project_members").insert({
-        project_id: projectId, user_id: profile.id, member_role: role
-      });
-      if (error) {
-        toast(error.code === "23505" ? "すでにメンバーです" : "追加失敗: " + error.message, true);
-        return;
+      try {
+        const res = await apiPost(`/api/projects/${projectId}/members/invite`, { email, display_name, member_role });
+        document.getElementById("member-email").value = "";
+        document.getElementById("member-name").value = "";
+        if (res.created && res.password) {
+          showPassword(`${res.email} のアカウントを作成しました`, res.password);
+          toast("アカウントを作成し、メンバーに追加しました");
+        } else {
+          hidePassword();
+          toast("既存アカウントをメンバーに追加しました");
+        }
+        await loadMembers();
+      } catch (e) {
+        toast(e.message, true);
       }
-      document.getElementById("member-email").value = "";
-      toast("メンバーを追加しました");
-      await loadMembers();
+    }
+
+    function showPassword(title, pw) {
+      document.getElementById("pw-title").textContent = title;
+      document.getElementById("pw-value").textContent = pw;
+      document.getElementById("pw-reveal").hidden = false;
+    }
+    function hidePassword() { document.getElementById("pw-reveal").hidden = true; }
+
+    async function copyPassword() {
+      const pw = document.getElementById("pw-value").textContent;
+      try { await navigator.clipboard.writeText(pw); toast("コピーしました"); }
+      catch (e) { toast("コピーできませんでした — 手動で選択してください", true); }
+    }
+
+    async function resetPassword(userId, email) {
+      if (!confirm(`${email} のパスワードをリセットしますか？\n(既存のログインセッションは無効になります)`)) return;
+      try {
+        const res = await apiPost(`/api/projects/${projectId}/members/${userId}/reset-password`);
+        showPassword(`${res.email} の新しいパスワード`, res.password);
+        toast("パスワードをリセットしました");
+      } catch (e) {
+        toast(e.message, true);
+      }
     }
 
     async function removeMember(userId) {
-      const { error } = await sb.from("project_members")
-        .delete().eq("project_id", projectId).eq("user_id", userId);
-      if (error) { toast("削除失敗: " + error.message, true); return; }
-      toast("メンバーを削除しました");
-      await loadMembers();
+      try {
+        await apiDelete(`/api/projects/${projectId}/members/${userId}`);
+        toast("メンバーを削除しました");
+        await loadMembers();
+      } catch (e) {
+        toast("削除失敗: " + e.message, true);
+      }
     }
 
     init();

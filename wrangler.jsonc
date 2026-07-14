@@ -1,0 +1,42 @@
+// ============================================================
+// 朱入れ (Shuire) — Cloudflare Worker configuration
+//
+// One Worker = API (worker/index.js) + static frontend (dist/).
+// Fill in database_id after running:  npx wrangler d1 create shuire
+// ============================================================
+{
+  "name": "lll-spec-review",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-06-01",
+
+  // Static frontend. Requests that match a file in dist/ are served
+  // directly; everything else (i.e. /api/*) reaches the Worker.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lll-spec-review",
+      "database_id": "PASTE-YOUR-DATABASE-ID-HERE"
+    }
+  ],
+
+  // Non-secret config. Secrets (RESEND_API_KEY, NOTIFY_WEBHOOK_URL) are set
+  // via: npx wrangler secret put <NAME>  — or Dashboard → Worker → Settings
+  // → Variables and Secrets. Notifications are skipped if secrets are absent.
+  "vars": {
+    "APP_URL": "https://lll-spec-review.philip-81c.workers.dev",
+    "BRAND_NAME": "朱入れ",
+    "MAIL_FROM": "onboarding@resend.dev"
+  },
+
+  "r2_buckets": [
+    {
+      "binding": "DOCS",
+      "bucket_name": "lll-spec-review-documents"
+    }
+  ]
+}

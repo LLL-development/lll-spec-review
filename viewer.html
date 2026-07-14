@@ -3,88 +3,367 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>朱入れ Shuire — ビューア</title>
+  <title>__BRAND__ — ビューア</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="viewer-body">
   <div class="viewer-toolbar">
     <a class="brand" href="dashboard.html" style="gap:8px;">
-      <span class="hanko" style="width:30px;height:30px;font-size:17px;">朱</span>
+      <span class="hanko" style="width:30px;height:30px;font-size:17px;" data-brand="mark"></span>
     </a>
     <a class="btn btn-ghost btn-sm" id="back-link" href="dashboard.html">← 戻る / Back</a>
     <span class="doc-name" id="doc-name">読み込み中…</span>
     <select id="version-select" onchange="switchVersion(this.value)"></select>
     <div class="spacer"></div>
-    <span class="badge" id="uploaded-at"></span>
+    <button class="btn btn-sm btn-shu" id="mode-btn" style="display:none" onclick="toggleMode()">
+      📍 コメントモード
+    </button>
+    <button class="btn btn-ghost btn-sm panel-toggle" id="panel-btn" onclick="togglePanel()">
+      💬 <span id="comment-count">0</span>
+    </button>
   </div>
 
-  <iframe id="doc-frame" sandbox="allow-scripts allow-popups" title="Document preview"></iframe>
+  <div class="viewer-main">
+    <div class="frame-wrap">
+      <iframe id="doc-frame" sandbox="allow-scripts allow-popups" title="Document preview"></iframe>
+      <div class="mode-hint" id="mode-hint" hidden>コメントしたい箇所をクリックしてください / Click where you want to comment</div>
+    </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js"></script>
+    <aside class="comment-panel" id="panel">
+      <div class="panel-head">
+        <span class="eyebrow" style="margin:0">Comments</span>
+        <button class="btn btn-ghost btn-sm panel-close" onclick="togglePanel()">✕</button>
+      </div>
+
+      <!-- compose: appears after placing a pin -->
+      <div class="compose card" id="compose" hidden>
+        <div class="compose-anchor" id="compose-anchor"></div>
+        <textarea id="compose-body" rows="3" placeholder="コメントを入力…"></textarea>
+        <div class="compose-actions">
+          <button class="btn btn-sm btn-shu" onclick="postComment()">投稿 / Post</button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelCompose()">キャンセル</button>
+        </div>
+      </div>
+
+      <label class="show-resolved">
+        <input type="checkbox" id="show-resolved" onchange="renderThreads()"> 解決済みも表示 / Show resolved
+      </label>
+
+      <div id="threads" class="threads">
+        <div class="empty" style="padding:20px">読み込み中…</div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+  <script src="js/brand.js"></script>
+  <script src="js/api.js"></script>
   <script src="js/app.js"></script>
   <script>
-    let currentDoc = null;
-    let versions = [];
-    let blobUrl = null;
+    let docMeta = null;
+    let comments = [];
+    let mode = "browse";
+    let draftAnchor = null;
+    let frameReady = false;
+    let pollTimer = null;
+
+    const frame = () => document.getElementById("doc-frame");
 
     async function init() {
-      const auth = await requireAuth();
-      if (!auth) return;
-
+      const profile = await requireAuth();
+      if (!profile) return;
       const docId = qs("doc");
       if (!docId) { location.href = "dashboard.html"; return; }
+      await loadDoc(docId, true);
+      window.addEventListener("message", onFrameMessage);
+      pollTimer = setInterval(refreshComments, 15000);
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) refreshComments();
+      });
+    }
 
-      const { data: doc, error } = await sb
-        .from("documents").select("*").eq("id", docId).single();
-      if (error || !doc) {
+    async function loadDoc(docId, buildVersionList) {
+      frameReady = false;
+      try {
+        docMeta = await apiGet(`/api/documents/${docId}`);
+      } catch (e) {
         document.getElementById("doc-name").textContent = "ドキュメントが見つかりません";
         return;
       }
-      currentDoc = doc;
-      document.getElementById("back-link").href = `project.html?id=${doc.project_id}`;
-      document.getElementById("doc-name").textContent = doc.filename;
-      document.title = `朱入れ — ${doc.filename}`;
 
-      // all versions of this filename in this project
-      const { data: vers, error: vErr } = await sb
-        .from("documents")
-        .select("id, version, uploaded_at")
-        .eq("project_id", doc.project_id)
-        .eq("filename", doc.filename)
-        .order("version", { ascending: false });
-      if (vErr) { toast(vErr.message, true); return; }
-      versions = vers;
+      document.getElementById("back-link").href = `project.html?id=${docMeta.project_id}`;
+      document.getElementById("doc-name").textContent = docMeta.filename;
+      document.title = `${BRAND.nameJa} — ${docMeta.filename}`;
+      document.getElementById("mode-btn").style.display = docMeta.can_comment ? "" : "none";
 
-      const sel = document.getElementById("version-select");
-      sel.innerHTML = versions.map(v =>
-        `<option value="${v.id}" ${v.id === doc.id ? "selected" : ""}>v${v.version}${v === versions[0] ? " (最新)" : ""}</option>`
-      ).join("");
+      if (buildVersionList) {
+        const sel = document.getElementById("version-select");
+        sel.innerHTML = docMeta.versions.map((v, i) =>
+          `<option value="${v.id}" ${v.id === docMeta.id ? "selected" : ""}>v${v.version}${i === 0 ? " (最新)" : ""}</option>`
+        ).join("");
+      }
 
-      await renderDoc(doc);
+      // Fetch the doc + our overlay script, convert to HTML if needed
+      // (md/txt/images), inject the overlay, render as a blob in the
+      // sandboxed iframe — so pin comments work on every format.
+      try {
+        const overlayP = apiText("/js/overlay.js");
+        const html = await docToHtml(docMeta.filename, docId);
+        const overlay = await overlayP;
+        const tag = `\n<script>${overlay}<\/script>\n`;
+        const injected = /<\/body>/i.test(html)
+          ? html.replace(/<\/body>/i, tag + "</body>")
+          : html + tag;
+        frame().src = URL.createObjectURL(new Blob([injected], { type: "text/html" }));
+      } catch (e) {
+        toast("ファイルの取得に失敗しました: " + e.message, true);
+        return;
+      }
+
+      cancelCompose();
+      await refreshComments();
     }
 
-    async function renderDoc(doc) {
-      document.getElementById("uploaded-at").textContent = fmtDate(doc.uploaded_at);
-      const frame = document.getElementById("doc-frame");
+    // ---------- format converters ----------
 
-      const { data: blob, error } = await sb.storage
-        .from("documents")
-        .download(doc.storage_path);
-      if (error) { toast("ファイルの取得に失敗しました: " + error.message, true); return; }
+    const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-      blobUrl = URL.createObjectURL(new Blob([blob], { type: "text/html" }));
-      frame.src = blobUrl;
+    function extOf(name) { return (name.split(".").pop() || "").toLowerCase(); }
+
+    function docWrapper(inner, opts = {}) {
+      return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Zen Kaku Gothic New", sans-serif;
+         color:#26241f; line-height:1.75; max-width:820px; margin:0 auto; padding:32px 20px 80px; }
+  h1,h2,h3 { line-height:1.35; margin:1.4em 0 .5em; }
+  h1 { font-size:1.7em; border-bottom:2px solid #e5e1d4; padding-bottom:.3em; }
+  h2 { font-size:1.35em; border-bottom:1px solid #e5e1d4; padding-bottom:.25em; }
+  code { background:#f2efe6; padding:.15em .4em; border-radius:3px; font-size:.9em; }
+  pre { background:#f2efe6; padding:14px; border-radius:5px; overflow:auto; }
+  pre code { background:none; padding:0; }
+  table { border-collapse:collapse; margin:1em 0; }
+  th,td { border:1px solid #d6d2c4; padding:6px 12px; }
+  th { background:#f2efe6; }
+  blockquote { border-left:3px solid #b23a2a; margin:1em 0; padding:.2em 1em; color:#6b675c; }
+  img { max-width:100%; }
+  ${opts.center ? "body{display:flex;align-items:center;justify-content:center;min-height:96vh;}" : ""}
+</style></head><body>${inner}</body></html>`;
+    }
+
+    async function docToHtml(filename, docId) {
+      const ext = extOf(filename);
+      if (IMAGE_EXTS.includes(ext) && ext !== "svg") {
+        const dataUri = await apiDataUri(`/api/documents/${docId}/content`);
+        return docWrapper(`<img src="${dataUri}" alt="${escapeHtml(filename)}">`, { center: true });
+      }
+      const text = await apiText(`/api/documents/${docId}/content`);
+      if (ext === "html" || ext === "htm") return text;
+      if (ext === "svg") return docWrapper(text, { center: true });
+      if (ext === "md") return docWrapper(marked.parse(text));
+      // txt and anything else: preformatted
+      return docWrapper(`<pre style="white-space:pre-wrap">${escapeHtml(text)}</pre>`);
     }
 
     async function switchVersion(docId) {
-      const { data: doc, error } = await sb
-        .from("documents").select("*").eq("id", docId).single();
-      if (error || !doc) { toast("バージョンの読み込みに失敗しました", true); return; }
-      currentDoc = doc;
-      history.replaceState(null, "", `viewer.html?doc=${doc.id}`);
-      await renderDoc(doc);
+      history.replaceState(null, "", `viewer.html?doc=${docId}`);
+      await loadDoc(docId, false);
+    }
+
+    // ---------- comments data ----------
+
+    async function refreshComments() {
+      if (!docMeta) return;
+      try {
+        comments = await apiGet(`/api/documents/${docMeta.id}/comments`);
+      } catch (e) { return; }
+      renderThreads();
+      sendState();
+    }
+
+    const topLevel = () => comments.filter(c => !c.parent_id);
+    const repliesOf = (id) => comments.filter(c => c.parent_id === id);
+    const numberOf = (id) => topLevel().findIndex(c => c.id === id) + 1;
+
+    // ---------- iframe bridge ----------
+
+    function onFrameMessage(e) {
+      const m = e.data || {};
+      if (m.ns !== "lllsr") return;
+      if (m.t === "ready") { frameReady = true; sendState(); }
+      if (m.t === "place" && mode === "comment" && docMeta?.can_comment) {
+        draftAnchor = m.anchor;
+        openCompose();
+        sendState();
+      }
+      if (m.t === "open") focusThread(m.id);
+    }
+
+    function sendState() {
+      if (!frameReady) return;
+      const pins = topLevel()
+        .filter(c => c.anchor)
+        .map(c => ({ id: c.id, n: numberOf(c.id), resolved: !!c.resolved, anchor: c.anchor }));
+      if (draftAnchor) pins.push({ id: "draft", draft: true, anchor: draftAnchor });
+      frame().contentWindow.postMessage({ ns: "lllsr-host", t: "state", mode, pins }, "*");
+    }
+
+    function focusPin(id) {
+      if (!frameReady) return;
+      frame().contentWindow.postMessage({ ns: "lllsr-host", t: "focus", id }, "*");
+    }
+
+    // ---------- comment mode ----------
+
+    function toggleMode() {
+      mode = mode === "comment" ? "browse" : "comment";
+      const btn = document.getElementById("mode-btn");
+      btn.classList.toggle("btn-shu", mode !== "comment");
+      btn.classList.toggle("mode-active", mode === "comment");
+      btn.textContent = mode === "comment" ? "✓ コメントモード中" : "📍 コメントモード";
+      document.getElementById("mode-hint").hidden = mode !== "comment";
+      sendState();
+    }
+
+    // ---------- compose ----------
+
+    function openCompose() {
+      openPanelIfMobile();
+      const box = document.getElementById("compose");
+      box.hidden = false;
+      document.getElementById("compose-anchor").textContent =
+        "📍 " + (draftAnchor?.text ? draftAnchor.text.slice(0, 60) : "選択した箇所");
+      document.getElementById("compose-body").focus();
+    }
+
+    function cancelCompose() {
+      draftAnchor = null;
+      document.getElementById("compose").hidden = true;
+      document.getElementById("compose-body").value = "";
+      sendState();
+    }
+
+    async function postComment() {
+      const body = document.getElementById("compose-body").value.trim();
+      if (!body) { toast("コメントを入力してください", true); return; }
+      try {
+        await apiPost(`/api/documents/${docMeta.id}/comments`, { body, anchor: draftAnchor });
+        cancelCompose();
+        if (mode === "comment") toggleMode();
+        await refreshComments();
+        toast("コメントを投稿しました");
+      } catch (e) { toast(e.message, true); }
+    }
+
+    // ---------- threads UI ----------
+
+    function renderThreads() {
+      const el = document.getElementById("threads");
+      const showResolved = document.getElementById("show-resolved").checked;
+      const items = topLevel().filter(c => showResolved || !c.resolved);
+      document.getElementById("comment-count").textContent =
+        topLevel().filter(c => !c.resolved).length;
+
+      if (!items.length) {
+        el.innerHTML = `<div class="empty" style="padding:24px 12px">コメントはまだありません。<br>
+          ${docMeta?.can_comment ? "「コメントモード」で文書内をクリックすると追加できます。" : ""}</div>`;
+        return;
+      }
+
+      el.innerHTML = items.map(c => {
+        const n = numberOf(c.id);
+        const replies = repliesOf(c.id);
+        const mine = c.author_id === currentProfile.id;
+        return `
+        <div class="thread ${c.resolved ? "resolved" : ""}" id="thread-${c.id}">
+          <div class="thread-head">
+            <button class="pin-chip" onclick="focusPin('${c.id}')" title="該当箇所へ">${n}</button>
+            <div class="thread-meta">
+              <span class="thread-author">${escapeHtml(c.author_name)}${c.author_role === "internal" ? ' <span class="badge badge-ai" style="font-size:10px">LLL</span>' : ""}</span>
+              <span class="thread-time">${fmtDate(c.created_at)}</span>
+            </div>
+            ${c.resolved ? '<span class="badge">解決済</span>' : ""}
+          </div>
+          ${c.anchor?.text ? `<div class="thread-anchor" onclick="focusPin('${c.id}')">📍 ${escapeHtml(c.anchor.text.slice(0, 48))}</div>` : ""}
+          <div class="thread-body">${escapeHtml(c.body)}</div>
+          ${replies.map(r => `
+            <div class="reply">
+              <div class="thread-meta">
+                <span class="thread-author">${escapeHtml(r.author_name)}${r.author_role === "internal" ? ' <span class="badge badge-ai" style="font-size:10px">LLL</span>' : ""}</span>
+                <span class="thread-time">${fmtDate(r.created_at)}</span>
+              </div>
+              <div class="thread-body">${escapeHtml(r.body)}</div>
+              ${(r.author_id === currentProfile.id || isInternal()) ? `<button class="link-btn" onclick="deleteComment('${r.id}')">削除</button>` : ""}
+            </div>`).join("")}
+          <div class="thread-actions">
+            ${docMeta?.can_comment ? `<button class="link-btn" onclick="toggleReply('${c.id}')">返信</button>` : ""}
+            ${docMeta?.can_comment ? `<button class="link-btn" onclick="setResolved('${c.id}', ${c.resolved ? "false" : "true"})">${c.resolved ? "再開" : "解決"}</button>` : ""}
+            ${(mine || isInternal()) ? `<button class="link-btn" onclick="deleteComment('${c.id}')">削除</button>` : ""}
+          </div>
+          <div class="reply-box" id="reply-${c.id}" hidden>
+            <textarea rows="2" placeholder="返信を入力…"></textarea>
+            <button class="btn btn-sm" onclick="postReply('${c.id}')">返信する</button>
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    function toggleReply(id) {
+      const box = document.getElementById(`reply-${id}`);
+      box.hidden = !box.hidden;
+      if (!box.hidden) box.querySelector("textarea").focus();
+    }
+
+    async function postReply(parentId) {
+      const box = document.getElementById(`reply-${parentId}`);
+      const body = box.querySelector("textarea").value.trim();
+      if (!body) return;
+      try {
+        await apiPost(`/api/documents/${docMeta.id}/comments`, { body, parent_id: parentId });
+        await refreshComments();
+      } catch (e) { toast(e.message, true); }
+    }
+
+    async function setResolved(id, resolved) {
+      try {
+        await api(`/api/comments/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resolved }),
+        });
+        await refreshComments();
+      } catch (e) { toast(e.message, true); }
+    }
+
+    async function deleteComment(id) {
+      if (!confirm("このコメントを削除しますか？")) return;
+      try {
+        await apiDelete(`/api/comments/${id}`);
+        await refreshComments();
+      } catch (e) { toast(e.message, true); }
+    }
+
+    function focusThread(id) {
+      openPanelIfMobile();
+      document.getElementById("show-resolved").checked = true;
+      renderThreads();
+      const el = document.getElementById(`thread-${id}`);
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        el.classList.add("flash");
+        setTimeout(() => el.classList.remove("flash"), 1600);
+      }
+    }
+
+    // ---------- panel (mobile bottom sheet) ----------
+
+    function togglePanel() {
+      document.getElementById("panel").classList.toggle("open");
+    }
+    function openPanelIfMobile() {
+      if (window.matchMedia("(max-width: 900px)").matches) {
+        document.getElementById("panel").classList.add("open");
+      }
     }
 
     init();
