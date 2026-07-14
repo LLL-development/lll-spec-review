@@ -1,0 +1,61 @@
+feat: self-service projects (any user can create/own) + multi-format uploads
+
+Permission model rework: project creation is no longer internal-only.
+Any signed-in user can create a project and becomes its owner; owners
+manage documents and members for their own projects. Internal accounts
+remain global admins. Also expands uploads beyond HTML — Markdown,
+plain text, and images — with pin comments working on all formats.
+No schema changes.
+
+## Permission model (worker/)
+
+worker/lib.js
+- NEW isProjectOwner(): internal OR member_role='owner' on the project
+
+worker/index.js
+- POST /api/projects: open to all users; creator inserted as 'owner'
+  member in the same D1 batch
+- GET /api/projects/:id: returns can_manage (drives management UI)
+- NEW requireOwner middleware gating: document upload, member
+  list/invite/remove, password reset
+- Password reset re-scoped: POST /api/projects/:id/members/:userId/
+  reset-password — requester must own THAT project, target must be a
+  client-account member of it, cannot target yourself or internal
+  accounts (old /api/members/:userId/reset-password removed)
+
+## Multi-format uploads
+n
+x
+xx
+xX
+
+:
+
+worker/index.js
+- Upload whitelist: html, htm, md, txt, svg, png, jpg, jpeg, gif, webp
+  (10MB cap unchanged); R2 keys keep the real extension
+- Content-type pinned at upload: text-ish formats (incl. HTML and SVG,
+  which can carry scripts) stored as text/plain — their URLs can never
+  render/execute directly; binary images keep their real mime
+- Content endpoint serves the stored content type
+
+viewer.html
+- Format pipeline: md → HTML via marked (CDN), txt → <pre>, images →
+  data-URI <img>, svg → inline; all wrapped in a readable styled shell,
+  overlay injected, rendered in the same sandboxed iframe → pins work
+  on every format
+
+js/api.js
+- NEW apiDataUri(): binary content → data: URI for image embedding
+
+## UI
+
+dashboard.html
+- Create-project form shown to everyone; empty state no longer says
+  "ask your contact to invite you"
+
+project.html
+- Upload + members sections gated on project.can_manage (owners see
+  them, not just internal)
+- File input accepts the new formats; PW-reset hidden for yourself;
+  reset call uses the project-scoped route

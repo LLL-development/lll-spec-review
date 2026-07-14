@@ -73,6 +73,8 @@
   <script src="js/app.js"></script>
   <script>
     const projectId = qs("id");
+    let canManage = false;
+    let docGroups = [];
     const ROLE_LABEL = {
       owner: "オーナー / Owner",
       client_commenter: "コメント可 / Can comment",
@@ -95,6 +97,7 @@
         return;
       }
 
+      canManage = project.can_manage;
       if (project.can_manage) {
         document.getElementById("upload-card").style.display = "";
         document.getElementById("members-section").style.display = "";
@@ -116,18 +119,20 @@
         // group by filename → show latest version, link to viewer
         const groups = {};
         for (const d of docs) (groups[d.filename] ??= []).push(d);
+        docGroups = Object.entries(groups).map(([filename, versions]) => ({ filename, versions }));
 
-        el.innerHTML = Object.entries(groups).map(([filename, versions]) => {
-          const latest = versions[0];
+        el.innerHTML = docGroups.map((g, i) => {
+          const latest = g.versions[0];
           return `
             <a class="list-item" href="viewer.html?doc=${latest.id}">
               <div class="item-main">
-                <div class="item-title">${escapeHtml(filename)}</div>
+                <div class="item-title">${escapeHtml(g.filename)}</div>
                 <div class="item-sub">最終更新 ${fmtDate(latest.uploaded_at)}</div>
               </div>
               <div class="item-side">
                 <span class="badge badge-shu">v${latest.version}</span>
-                <span class="badge">${versions.length} version${versions.length > 1 ? "s" : ""}</span>
+                <span class="badge">${g.versions.length} version${g.versions.length > 1 ? "s" : ""}</span>
+                ${canManage ? `<button class="btn btn-ghost btn-sm" onclick="event.preventDefault(); event.stopPropagation(); deleteDocGroup(${i})">削除 / Delete</button>` : ""}
               </div>
             </a>`;
         }).join("");
@@ -184,6 +189,20 @@
         if (files.length) await uploadFiles(files);
       });
     })();
+
+    async function deleteDocGroup(i) {
+      const g = docGroups[i];
+      if (!g) return;
+      const n = g.versions.length;
+      if (!confirm(`「${g.filename}」を削除しますか？\n全 ${n} バージョンと、付いているコメントもすべて削除されます。`)) return;
+      let fail = 0;
+      for (const v of g.versions) {
+        try { await apiDelete(`/api/documents/${v.id}`); }
+        catch (e) { fail++; }
+      }
+      toast(fail ? `一部削除に失敗しました (${fail}/${n})` : `「${g.filename}」を削除しました`, fail > 0);
+      await loadDocuments();
+    }
 
     // ---------- members ----------
 

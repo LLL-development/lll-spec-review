@@ -434,6 +434,21 @@ app.get("/api/documents/:id", async (c) => {
   return c.json({ ...meta, versions, can_comment });
 });
 
+// Delete one document version: D1 row (comments cascade via FK),
+// then the R2 object. Project owners only. An R2 delete failure is
+// swallowed — an orphaned object is harmless; a dangling DB row isn't.
+app.delete("/api/documents/:id", async (c) => {
+  const doc = await c.env.DB.prepare("SELECT * FROM documents WHERE id = ?")
+    .bind(c.req.param("id")).first();
+  if (!doc) return c.json({ error: "not found" }, 404);
+  if (!(await isProjectOwner(c.env.DB, c.get("user"), doc.project_id))) {
+    return c.json({ error: "権限がありません / Forbidden" }, 403);
+  }
+  await c.env.DB.prepare("DELETE FROM documents WHERE id = ?").bind(doc.id).run();
+  try { await c.env.DOCS.delete(doc.r2_key); } catch (_) {}
+  return c.json({ ok: true });
+});
+
 // The HTML itself, streamed from R2 (after the same access check)
 app.get("/api/documents/:id/content", async (c) => {
   const doc = await c.env.DB.prepare("SELECT * FROM documents WHERE id = ?")
