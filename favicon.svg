@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="5" y="5" width="54" height="54" rx="9" fill="#B23A2A" transform="rotate(-3 32 32)"/>
+  <rect x="9" y="9" width="46" height="46" rx="6" fill="none" stroke="#F6F4EE" stroke-opacity=".35" stroke-width="2.5" transform="rotate(-3 32 32)"/>
+  <text x="32" y="44.5" font-family="'Hiragino Mincho ProN','Yu Mincho','Noto Serif JP',serif" font-size="34" font-weight="700" fill="#F6F4EE" text-anchor="middle" transform="rotate(-3 32 32)">朱</text>
+</svg>

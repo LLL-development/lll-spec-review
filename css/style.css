@@ -482,3 +482,45 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
 }
 .dropzone.dragging { border-color: var(--shu); background: #FBF3EC; }
 .dropzone.dragging .drop-hint { border-color: var(--shu); color: var(--shu); }
+
+/* ---------- modal (styled confirm) ---------- */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(38, 36, 31, .45);
+  display: grid; place-items: center;
+  z-index: 90;
+  padding: 20px;
+  animation: modal-fade .14s ease;
+}
+.modal-backdrop.closing { opacity: 0; transition: opacity .12s; }
+@keyframes modal-fade { from { opacity: 0; } }
+
+.modal {
+  width: 100%; max-width: 420px;
+  background: var(--washi-raised);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--ai);
+  border-radius: var(--radius);
+  padding: 22px 22px 18px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.22);
+  animation: modal-pop .16s ease;
+}
+.modal-danger { border-top-color: var(--shu); }
+@keyframes modal-pop { from { transform: translateY(8px) scale(.98); opacity: 0; } }
+
+.modal-title { font-family: var(--font-display); font-weight: 700; font-size: 17px; letter-spacing: .04em; margin-bottom: 8px; }
+.modal-message { font-size: 13.5px; color: var(--ink); line-height: 1.7; margin-bottom: 18px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ---------- styled file picker ---------- */
+.file-picker { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.file-picker input[type="file"] {
+  position: absolute; width: 1px; height: 1px;
+  opacity: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.file-picker input[type="file"]:focus-visible + label { outline: 2px solid var(--ai); outline-offset: 2px; }
+.file-picker .file-names {
+  font-size: 12.5px; color: var(--ink-soft);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
+}

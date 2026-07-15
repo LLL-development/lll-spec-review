@@ -17,6 +17,7 @@ echo "→ Copying static files"
 cp "$SRC_DIR"/*.html "$DIST_DIR/"
 cp "$SRC_DIR"/js/*.js "$DIST_DIR/js/"
 cp "$SRC_DIR"/css/*.css "$DIST_DIR/css/"
+cp "$SRC_DIR"/favicon.svg "$DIST_DIR/" 2>/dev/null || true
 
 [ -f "$SRC_DIR/_headers" ] && cp "$SRC_DIR/_headers" "$DIST_DIR/"
 

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>__BRAND__ — プロジェクト</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -17,8 +18,12 @@
     <div class="card dropzone" id="upload-card" style="display:none; margin-bottom:8px;">
       <div class="form-row">
         <div class="field">
-          <label for="file-input">ファイルをアップロード / Upload (HTML, Markdown, テキスト, 画像)</label>
-          <input type="file" id="file-input" multiple accept=".html,.htm,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg">
+          <label>ファイルをアップロード / Upload (HTML, Markdown, テキスト, 画像)</label>
+          <div class="file-picker">
+            <input type="file" id="file-input" multiple accept=".html,.htm,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg" onchange="updateFileNames()">
+            <label class="btn btn-ghost" for="file-input">📁 ファイルを選択 / Choose</label>
+            <span class="file-names" id="file-names">未選択 / No file selected</span>
+          </div>
         </div>
         <button class="btn btn-shu" id="upload-btn" onclick="uploadSelected()">アップロード / Upload</button>
       </div>
@@ -141,11 +146,20 @@
       }
     }
 
+    function updateFileNames() {
+      const files = document.getElementById("file-input").files;
+      const el = document.getElementById("file-names");
+      if (!files.length) el.textContent = "未選択 / No file selected";
+      else if (files.length === 1) el.textContent = files[0].name;
+      else el.textContent = `${files.length} 件のファイル / ${files.length} files`;
+    }
+
     async function uploadSelected() {
       const input = document.getElementById("file-input");
       if (!input.files.length) { toast("ファイルを選択してください", true); return; }
       await uploadFiles(input.files);
       input.value = "";
+      updateFileNames();
     }
 
     async function uploadFiles(fileList) {
@@ -194,7 +208,13 @@
       const g = docGroups[i];
       if (!g) return;
       const n = g.versions.length;
-      if (!confirm(`「${g.filename}」を削除しますか？\n全 ${n} バージョンと、付いているコメントもすべて削除されます。`)) return;
+      const ok = await appConfirm({
+        title: "ドキュメントを削除 / Delete document",
+        message: `「${g.filename}」を削除しますか？\n全 ${n} バージョンと、付いているコメントもすべて削除されます。`,
+        okLabel: "削除する / Delete",
+        danger: true,
+      });
+      if (!ok) return;
       let fail = 0;
       for (const v of g.versions) {
         try { await apiDelete(`/api/documents/${v.id}`); }
@@ -267,7 +287,13 @@
     }
 
     async function resetPassword(userId, email) {
-      if (!confirm(`${email} のパスワードをリセットしますか？\n(既存のログインセッションは無効になります)`)) return;
+      const ok2 = await appConfirm({
+        title: "パスワードをリセット / Reset password",
+        message: `${email} のパスワードをリセットしますか？\n既存のログインセッションはすべて無効になります。`,
+        okLabel: "リセットする / Reset",
+        danger: true,
+      });
+      if (!ok2) return;
       try {
         const res = await apiPost(`/api/projects/${projectId}/members/${userId}/reset-password`);
         showPassword(`${res.email} の新しいパスワード`, res.password);
@@ -278,6 +304,13 @@
     }
 
     async function removeMember(userId) {
+      const ok = await appConfirm({
+        title: "メンバーを削除 / Remove member",
+        message: "このメンバーをプロジェクトから削除しますか？",
+        okLabel: "削除する / Remove",
+        danger: true,
+      });
+      if (!ok) return;
       try {
         await apiDelete(`/api/projects/${projectId}/members/${userId}`);
         toast("メンバーを削除しました");

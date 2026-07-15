@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>__BRAND__ — ビューア</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="viewer-body">
@@ -336,7 +337,13 @@
     }
 
     async function deleteComment(id) {
-      if (!confirm("このコメントを削除しますか？")) return;
+      const ok = await appConfirm({
+        title: "コメントを削除 / Delete comment",
+        message: "このコメントを削除しますか？返信も一緒に削除されます。",
+        okLabel: "削除する / Delete",
+        danger: true,
+      });
+      if (!ok) return;
       try {
         await apiDelete(`/api/comments/${id}`);
         await refreshComments();

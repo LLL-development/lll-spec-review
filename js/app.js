@@ -61,6 +61,39 @@ function fmtDate(iso) {
     + " " + d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
 }
 
+// Styled confirmation dialog replacing native confirm().
+// Usage: if (!(await appConfirm({ title, message, okLabel, danger }))) return;
+function appConfirm({ title = "確認 / Confirm", message = "", okLabel = "OK", cancelLabel = "キャンセル", danger = false } = {}) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement("div");
+    wrap.className = "modal-backdrop";
+    wrap.innerHTML = `
+      <div class="modal ${danger ? "modal-danger" : ""}" role="dialog" aria-modal="true">
+        <div class="modal-title">${escapeHtml(title)}</div>
+        <div class="modal-message">${escapeHtml(message).replace(/\n/g, "<br>")}</div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" data-act="cancel">${escapeHtml(cancelLabel)}</button>
+          <button class="btn ${danger ? "btn-shu" : ""}" data-act="ok">${escapeHtml(okLabel)}</button>
+        </div>
+      </div>`;
+    const done = (v) => {
+      document.removeEventListener("keydown", onKey);
+      wrap.classList.add("closing");
+      setTimeout(() => wrap.remove(), 120);
+      resolve(v);
+    };
+    const onKey = (e) => { if (e.key === "Escape") done(false); };
+    wrap.addEventListener("click", (e) => {
+      if (e.target === wrap) return done(false);
+      const act = e.target.closest("[data-act]")?.dataset.act;
+      if (act) done(act === "ok");
+    });
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(wrap);
+    wrap.querySelector('[data-act="ok"]').focus();
+  });
+}
+
 let toastTimer = null;
 function toast(msg, isError = false) {
   let el = document.getElementById("toast");

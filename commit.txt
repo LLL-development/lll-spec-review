@@ -1,21 +1,34 @@
-feat: deletable documents (all versions + comments, owner-only)
+feat: styled confirmation modals, custom file picker, hanko favicon
 
-Uploaded documents can now be deleted from the project page.
-No schema changes — comment cleanup rides on the existing
-ON DELETE CASCADE foreign key.
+UI polish pass replacing the remaining raw-browser chrome with
+design-system equivalents. Frontend-only, no schema or API changes.
 
-worker/index.js
-- NEW DELETE /api/documents/:id — deletes one document version.
-  Project owners (or internal) only. Order matters: D1 row first
-  (comments cascade via FK), then the R2 object; an R2 delete
-  failure is swallowed since an orphaned object is harmless while
-  a dangling DB row would be a broken document.
+js/app.js
+- NEW appConfirm({title, message, okLabel, danger}): promise-based
+  styled confirmation dialog — washi card, indigo top border (shu red
+  for danger variant), Escape/backdrop-click to cancel, subtle pop
+  animation, focus lands on the confirm button
 
 project.html
-- 削除 / Delete button on each document row (owners only), with
-  event.preventDefault/stopPropagation so it doesn't trigger the
-  row's viewer link
-- Deleting removes ALL versions of that filename (looped over the
-  version list) after a confirm dialog stating the version count
-  and that attached comments go with them
-- Per-file result toasts with partial-failure reporting
+- Native confirm() replaced with appConfirm for: document deletion,
+  password reset, member removal (the last one previously had no
+  confirmation at all)
+- File input restyled: native control visually hidden (kept keyboard-
+  accessible with a focus ring), replaced by a 📁 Choose button +
+  selected-filename readout ("2 件のファイル" for multi-select),
+  resets after upload
+
+viewer.html
+- Comment deletion uses appConfirm (message now notes replies are
+  deleted too)
+
+favicon.svg (NEW) + all pages
+- Hanko-style favicon: rotated shu-vermillion seal with 朱 character,
+  SVG so it stays crisp at any size; <link rel="icon"> added to all
+  five pages
+
+css/style.css
+- .modal-backdrop/.modal styles + animations, .file-picker styles
+
+build.sh
+- Copies favicon.svg into dist/
