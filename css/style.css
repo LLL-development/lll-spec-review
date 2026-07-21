@@ -524,3 +524,19 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   min-width: 0;
 }
+
+/* ---------- diff bar + diff marks ---------- */
+.diff-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 16px; background: #F1EEE4;
+  border-bottom: 1px solid var(--line);
+}
+.diff-bar select { width: auto; padding: 5px 9px; font-size: 13px; }
+.diff-bar-label { font-size: 12px; color: var(--ink-soft); }
+.diff-bar-arrow { color: var(--shu); font-weight: 700; }
+.diff-legend { font-size: 12px; display: flex; gap: 8px; }
+.diff-legend ins { background: rgba(84,130,53,.22); text-decoration: none; padding: 0 4px; border-radius: 2px; }
+.diff-legend del { background: rgba(178,58,42,.18); padding: 0 4px; border-radius: 2px; }
+
+ins { background: rgba(84,130,53,.22); text-decoration: none; }
+del { background: rgba(178,58,42,.18); }

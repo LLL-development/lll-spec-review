@@ -1,39 +1,80 @@
-name: Deploy
+name: Deploy to Cloudflare
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      apply_schema:
-        description: "Also apply schema.sql to remote D1 (first-time setup)"
-        type: boolean
-        default: false
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          node-version: 20
 
       - name: Install dependencies
         run: npm ci || npm install
 
+      - name: Read version
+        id: v
+        run: |
+          VERSION=$(tr -d ' \n' < VERSION)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Deploying version $VERSION"
+
+      - name: Enforce version bump
+        run: |
+          if git rev-parse "v${{ steps.v.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Version ${{ steps.v.outputs.version }} has already been released."
+            echo "::error::Edit the VERSION file (and CHANGELOG.md) before deploying again."
+            exit 1
+          fi
+
+      - name: Check wrangler.jsonc is configured
+        run: |
+          if grep -q "PASTE-YOUR-DATABASE-ID-HERE" wrangler.jsonc; then
+            echo "::error::wrangler.jsonc still has the placeholder database_id."
+            exit 1
+          fi
+
       - name: Build frontend → dist/
         run: bash ./build.sh
 
-      - name: Apply D1 schema (manual runs only, if requested)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_schema }}
-        run: npx wrangler d1 execute lll-spec-review --remote --file=./schema.sql
+      - name: Apply database migrations
+        run: npx wrangler d1 migrations apply lll-spec-review --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy Worker
-        run: npx wrangler deploy
+        run: npx wrangler deploy --var APP_VERSION:"${{ steps.v.outputs.version }}"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Tag this release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ steps.v.outputs.version }}" -m "lll-spec-review v${{ steps.v.outputs.version }}"
+          git push origin "v${{ steps.v.outputs.version }}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES=$(awk '/^## /{n++} n==1' CHANGELOG.md 2>/dev/null || echo "lll-spec-review v${{ steps.v.outputs.version }}")
+          gh release create "v${{ steps.v.outputs.version }}" \
+            --title "lll-spec-review v${{ steps.v.outputs.version }}" \
+            --notes "$NOTES" || true

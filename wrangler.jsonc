@@ -20,7 +20,8 @@
     {
       "binding": "DB",
       "database_name": "lll-spec-review",
-      "database_id": "f382b602-3220-4b6f-ac42-0855e3839d7b"
+      "database_id": "f382b602-3220-4b6f-ac42-0855e3839d7b",
+      "migrations_dir": "migrations"
     }
   ],
 
@@ -31,7 +32,8 @@
     "APP_URL": "https://lll-spec-review.philip-81c.workers.dev",
     "BRAND_NAME": "朱入れ",
     "MAIL_FROM": "onboarding@resend.dev",
-    "GOOGLE_CLIENT_ID": "959452591497-u1deuf5uovol673bhm0h9qh29juub0an.apps.googleusercontent.com"
+    "GOOGLE_CLIENT_ID": "959452591497-u1deuf5uovol673bhm0h9qh29juub0an.apps.googleusercontent.com",
+    "APP_VERSION": "dev"
   },
 
   "r2_buckets": [

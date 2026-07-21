@@ -168,6 +168,8 @@ app.get("/api/auth/me", async (c) => {
 });
 
 // What auth methods are available (drives the login page UI)
+app.get("/api/health", (c) => c.json({ ok: true, version: c.env.APP_VERSION || "dev" }));
+
 app.get("/api/auth/config", (c) => {
   return c.json({ google: !!(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET) });
 });

@@ -1,34 +1,46 @@
-feat: styled confirmation modals, custom file picker, hanko favicon
+release: v1.1.0 — text-range comments, version diff, archquest-style deploy
 
-UI polish pass replacing the remaining raw-browser chrome with
-design-system equivalents. Frontend-only, no schema or API changes.
+Comment anchoring gains text-range selection, comments can surface a
+word-level diff of what changed in newer versions, and the project
+adopts the archquest deploy toolchain (VERSION file, deploy.sh, wrangler
+migrations, auto tag + release).
 
-js/app.js
-- NEW appConfirm({title, message, okLabel, danger}): promise-based
-  styled confirmation dialog — washi card, indigo top border (shu red
-  for danger variant), Escape/backdrop-click to cancel, subtle pop
-  animation, focus lands on the confirm button
+## Comment anchoring (js/overlay.js — rewritten)
+- Two anchor kinds:
+  - element: clicked element (selector + snippet + rx/ry) — as before
+  - range: highlighted text (quote + prefix/suffix for re-finding after
+    edits) — NEW. Select text in comment mode → pin anchors to it.
+- Range highlights drawn as translucent underlays; tap a comment/pin to
+  fly to its spot (element flash or range outline).
+- NEW diffmarks message: paints added/changed text ranges by char offset.
 
-project.html
-- Native confirm() replaced with appConfirm for: document deletion,
-  password reset, member removal (the last one previously had no
-  confirmation at all)
-- File input restyled: native control visually hidden (kept keyboard-
-  accessible with a focus ring), replaced by a 📁 Choose button +
-  selected-filename readout ("2 件のファイル" for multi-select),
-  resets after upload
+## Version diff (js/diff.js — NEW)
+- LCS word-level diff over the visible text of two versions, with a guard
+  against pathological input sizes.
+- Produces add-marks (char offsets into the new text) + inline ins/del HTML.
 
-viewer.html
-- Comment deletion uses appConfirm (message now notes replies are
-  deleted too)
+## Viewer (viewer.html)
+- 🔀 Diff bar: choose Base + Compare versions → highlights additions in the
+  rendered document, with an add/remove legend. (Text formats only; images
+  are before/after via the version switcher.)
+- Per-comment "変更を確認 / See changes": jumps to the comment's anchor in
+  the latest version and highlights what changed there.
+- Compose + thread previews show the quoted text for range anchors.
+- Toggle between element/whole-doc handled implicitly: element anchors flash
+  the element, range anchors outline the span; diff can be run doc-wide.
 
-favicon.svg (NEW) + all pages
-- Hanko-style favicon: rotated shu-vermillion seal with 朱 character,
-  SVG so it stays crisp at any size; <link rel="icon"> added to all
-  five pages
+## Deploy toolchain (matches archquest)
+- VERSION file (1.1.0); deploy.yml enforces a version bump per deploy,
+  applies D1 migrations, deploys with APP_VERSION, tags the release, and
+  creates a GitHub release.
+- deploy.sh: Termux deployer (find zip → stage → rsync → commit -F commit.txt
+  → push).
+- migrations/ dir with idempotent 0001/0002 (CREATE TABLE IF NOT EXISTS) so
+  switching the existing DB to wrangler migrations is safe; see
+  migrations/README.md for the one-time "mark as applied" note.
+- GET /api/health → { ok, version }.
+- CHANGELOG.md, .gitignore added.
 
-css/style.css
-- .modal-backdrop/.modal styles + animations, .file-picker styles
-
-build.sh
-- Copies favicon.svg into dist/
+## Config (wrangler.jsonc)
+- migrations_dir, APP_VERSION var added. database_id + GOOGLE_CLIENT_ID
+  already baked in — do not overwrite with placeholders.

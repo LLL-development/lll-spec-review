@@ -19,15 +19,30 @@
     <button class="btn btn-sm btn-shu" id="mode-btn" style="display:none" onclick="toggleMode()">
       📍 コメントモード
     </button>
+    <button class="btn btn-ghost btn-sm" id="diff-btn" style="display:none" onclick="toggleDiffBar()">
+      🔀 変更を見る / Diff
+    </button>
     <button class="btn btn-ghost btn-sm panel-toggle" id="panel-btn" onclick="togglePanel()">
       💬 <span id="comment-count">0</span>
     </button>
   </div>
 
+  <div class="diff-bar" id="diff-bar" hidden>
+    <span class="diff-bar-label">変更前 / Base</span>
+    <select id="diff-base"></select>
+    <span class="diff-bar-arrow">→</span>
+    <span class="diff-bar-label">変更後 / Compare</span>
+    <select id="diff-compare"></select>
+    <button class="btn btn-sm btn-shu" onclick="runDiff()">比較 / Compare</button>
+    <span class="diff-legend"><ins>追加</ins> <del>削除</del></span>
+    <div class="spacer"></div>
+    <button class="btn btn-ghost btn-sm" onclick="closeDiff()">✕ 閉じる</button>
+  </div>
+
   <div class="viewer-main">
     <div class="frame-wrap">
       <iframe id="doc-frame" sandbox="allow-scripts allow-popups" title="Document preview"></iframe>
-      <div class="mode-hint" id="mode-hint" hidden>コメントしたい箇所をクリックしてください / Click where you want to comment</div>
+      <div class="mode-hint" id="mode-hint" hidden>クリック、またはテキストを選択してコメント / Click an element or select text to comment</div>
     </div>
 
     <aside class="comment-panel" id="panel">
@@ -58,6 +73,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
   <script src="js/brand.js"></script>
+  <script src="js/diff.js"></script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
   <script>
@@ -96,6 +112,7 @@
       document.getElementById("doc-name").textContent = docMeta.filename;
       document.title = `${BRAND.nameJa} — ${docMeta.filename}`;
       document.getElementById("mode-btn").style.display = docMeta.can_comment ? "" : "none";
+      document.getElementById("diff-btn").style.display = docMeta.versions.length > 1 ? "" : "none";
 
       if (buildVersionList) {
         const sel = document.getElementById("version-select");
@@ -185,13 +202,23 @@
     const topLevel = () => comments.filter(c => !c.parent_id);
     const repliesOf = (id) => comments.filter(c => c.parent_id === id);
     const numberOf = (id) => topLevel().findIndex(c => c.id === id) + 1;
+    function anchorPreview(c) {
+      if (!c.anchor) return "";
+      if (c.anchor.kind === "range" && c.anchor.quote) return "“" + c.anchor.quote.slice(0, 48) + "”";
+      if (c.anchor.text) return c.anchor.text.slice(0, 48);
+      return "";
+    }
 
     // ---------- iframe bridge ----------
 
     function onFrameMessage(e) {
       const m = e.data || {};
       if (m.ns !== "lllsr") return;
-      if (m.t === "ready") { frameReady = true; sendState(); }
+      if (m.t === "ready") {
+        frameReady = true;
+        sendState();
+        if (frameReadyResolve) { const r = frameReadyResolve; frameReadyResolve = null; setTimeout(r, 50); }
+      }
       if (m.t === "place" && mode === "comment" && docMeta?.can_comment) {
         draftAnchor = m.anchor;
         openCompose();
@@ -232,8 +259,10 @@
       openPanelIfMobile();
       const box = document.getElementById("compose");
       box.hidden = false;
-      document.getElementById("compose-anchor").textContent =
-        "📍 " + (draftAnchor?.text ? draftAnchor.text.slice(0, 60) : "選択した箇所");
+      const preview = draftAnchor?.kind === "range"
+        ? "“" + (draftAnchor.quote || "").slice(0, 60) + "”"
+        : (draftAnchor?.text ? draftAnchor.text.slice(0, 60) : "選択した箇所");
+      document.getElementById("compose-anchor").textContent = "📍 " + preview;
       document.getElementById("compose-body").focus();
     }
 
@@ -285,7 +314,7 @@
             </div>
             ${c.resolved ? '<span class="badge">解決済</span>' : ""}
           </div>
-          ${c.anchor?.text ? `<div class="thread-anchor" onclick="focusPin('${c.id}')">📍 ${escapeHtml(c.anchor.text.slice(0, 48))}</div>` : ""}
+          ${anchorPreview(c) ? `<div class="thread-anchor" onclick="focusPin('${c.id}')">📍 ${escapeHtml(anchorPreview(c))}</div>` : ""}
           <div class="thread-body">${escapeHtml(c.body)}</div>
           ${replies.map(r => `
             <div class="reply">
@@ -298,6 +327,7 @@
             </div>`).join("")}
           <div class="thread-actions">
             ${docMeta?.can_comment ? `<button class="link-btn" onclick="toggleReply('${c.id}')">返信</button>` : ""}
+            ${docMeta && docMeta.versions.length > 1 ? `<button class="link-btn" onclick="reviewChanges('${c.id}')">変更を確認 / See changes</button>` : ""}
             ${docMeta?.can_comment ? `<button class="link-btn" onclick="setResolved('${c.id}', ${c.resolved ? "false" : "true"})">${c.resolved ? "再開" : "解決"}</button>` : ""}
             ${(mine || isInternal()) ? `<button class="link-btn" onclick="deleteComment('${c.id}')">削除</button>` : ""}
           </div>
@@ -360,6 +390,114 @@
         el.classList.add("flash");
         setTimeout(() => el.classList.remove("flash"), 1600);
       }
+    }
+
+    // ---------- diff / version compare ----------
+
+    const TEXT_EXTS = ["html", "htm", "md", "txt", "svg"];
+    function isTextDoc() { return TEXT_EXTS.includes(extOf(docMeta.filename)); }
+
+    function versionOptions(selectedId) {
+      return docMeta.versions.map((v, i) =>
+        `<option value="${v.id}" ${v.id === selectedId ? "selected" : ""}>v${v.version}${i === 0 ? " (最新)" : ""}</option>`
+      ).join("");
+    }
+
+    function toggleDiffBar() {
+      const bar = document.getElementById("diff-bar");
+      const show = bar.hidden;
+      bar.hidden = !show;
+      if (show) {
+        const vs = docMeta.versions;
+        // default: compare previous → current
+        const base = vs[1] ? vs[1].id : vs[0].id;
+        const compare = vs[0].id;
+        document.getElementById("diff-base").innerHTML = versionOptions(base);
+        document.getElementById("diff-compare").innerHTML = versionOptions(compare);
+      }
+    }
+    function closeDiff() {
+      document.getElementById("diff-bar").hidden = true;
+      // reload the current doc clean (clears diff marks)
+      loadDoc(docMeta.id, false);
+    }
+
+    async function fetchDocText(docId) {
+      return apiText(`/api/documents/${docId}/content`);
+    }
+
+    // Convert stored text of a doc into the same rendered HTML the
+    // viewer shows, so diff offsets line up with what the user sees.
+    async function renderVersion(docId) {
+      const filename = docMeta.filename;
+      const html = await docToHtml(filename, docId);
+      const overlay = await apiText("/js/overlay.js");
+      const tag = `\n<script>${overlay}<\/script>\n`;
+      const injected = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, tag + "</body>") : html + tag;
+      frame().src = URL.createObjectURL(new Blob([injected], { type: "text/html" }));
+      await new Promise(res => { frameReadyResolve = res; });
+    }
+
+    let frameReadyResolve = null;
+
+    async function runDiff() {
+      if (!isTextDoc()) { toast("画像はテキスト差分に対応していません(前後比較のみ)", true); return; }
+      const baseId = document.getElementById("diff-base").value;
+      const compareId = document.getElementById("diff-compare").value;
+      if (baseId === compareId) { toast("異なるバージョンを選んでください", true); return; }
+      try {
+        const [oldText, newText] = await Promise.all([fetchDocText(baseId), fetchDocText(compareId)]);
+        // render the COMPARE (new) version, then paint added text
+        await renderVersion(compareId);
+        // extract visible text from rendered new doc for offset alignment
+        const newVisible = frame().contentDocument?.body?.innerText || newText;
+        const oldVisible = extOf(docMeta.filename) === "md"
+          ? stripToText(oldText) : oldText;
+        const { marks } = diffText(stripToText(oldText), newVisible);
+        frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks }, "*");
+        toast(`${marks.length} 箇所の追加/変更をハイライトしました`);
+      } catch (e) {
+        toast("差分の生成に失敗しました: " + e.message, true);
+      }
+    }
+
+    function stripToText(raw) {
+      const ext = extOf(docMeta.filename);
+      if (ext === "html" || ext === "htm" || ext === "svg") {
+        const d = new DOMParser().parseFromString(raw, "text/html");
+        return d.body ? d.body.innerText : raw;
+      }
+      return raw; // md/txt: compare source text
+    }
+
+    // From a comment: jump to its anchor in the CURRENT doc and, if
+    // newer versions exist, highlight what changed at that spot.
+    async function reviewChanges(commentId) {
+      const c = comments.find(x => x.id === commentId);
+      if (!c) return;
+      openDiffForComment(c);
+    }
+
+    async function openDiffForComment(c) {
+      // ensure we're on the latest version
+      const latest = docMeta.versions[0];
+      const onLatest = docMeta.id === latest.id;
+      if (!onLatest) { await switchVersion(latest.id); }
+      // focus the anchor in the latest doc
+      if (c.anchor) {
+        frame().contentWindow.postMessage({ ns: "lllsr-host", t: "focus", id: c.id, anchor: c.anchor }, "*");
+      }
+      // if there is an older version to compare against, mark diffs
+      if (docMeta.versions.length > 1 && isTextDoc()) {
+        const prev = docMeta.versions[1];
+        try {
+          const [oldText] = await Promise.all([fetchDocText(prev.id)]);
+          const newVisible = frame().contentDocument?.body?.innerText || "";
+          const { marks } = diffText(stripToText(oldText), newVisible);
+          frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks }, "*");
+        } catch (e) { /* non-fatal */ }
+      }
+      focusThread(c.id);
     }
 
     // ---------- panel (mobile bottom sheet) ----------
