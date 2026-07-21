@@ -1,46 +1,8 @@
-release: v1.1.0 — text-range comments, version diff, archquest-style deploy
+fix: bump GitHub Actions Node to 22 (wrangler requires >=22)
 
-Comment anchoring gains text-range selection, comments can surface a
-word-level diff of what changed in newer versions, and the project
-adopts the archquest deploy toolchain (VERSION file, deploy.sh, wrangler
-migrations, auto tag + release).
+Wrangler's latest release requires Node.js >= 22; the deploy workflow
+pinned Node 20 (inherited from the archquest reference), causing the
+"Apply database migrations" step to fail. Bumped setup-node to 22.
 
-## Comment anchoring (js/overlay.js — rewritten)
-- Two anchor kinds:
-  - element: clicked element (selector + snippet + rx/ry) — as before
-  - range: highlighted text (quote + prefix/suffix for re-finding after
-    edits) — NEW. Select text in comment mode → pin anchors to it.
-- Range highlights drawn as translucent underlays; tap a comment/pin to
-  fly to its spot (element flash or range outline).
-- NEW diffmarks message: paints added/changed text ranges by char offset.
-
-## Version diff (js/diff.js — NEW)
-- LCS word-level diff over the visible text of two versions, with a guard
-  against pathological input sizes.
-- Produces add-marks (char offsets into the new text) + inline ins/del HTML.
-
-## Viewer (viewer.html)
-- 🔀 Diff bar: choose Base + Compare versions → highlights additions in the
-  rendered document, with an add/remove legend. (Text formats only; images
-  are before/after via the version switcher.)
-- Per-comment "変更を確認 / See changes": jumps to the comment's anchor in
-  the latest version and highlights what changed there.
-- Compose + thread previews show the quoted text for range anchors.
-- Toggle between element/whole-doc handled implicitly: element anchors flash
-  the element, range anchors outline the span; diff can be run doc-wide.
-
-## Deploy toolchain (matches archquest)
-- VERSION file (1.1.0); deploy.yml enforces a version bump per deploy,
-  applies D1 migrations, deploys with APP_VERSION, tags the release, and
-  creates a GitHub release.
-- deploy.sh: Termux deployer (find zip → stage → rsync → commit -F commit.txt
-  → push).
-- migrations/ dir with idempotent 0001/0002 (CREATE TABLE IF NOT EXISTS) so
-  switching the existing DB to wrangler migrations is safe; see
-  migrations/README.md for the one-time "mark as applied" note.
-- GET /api/health → { ok, version }.
-- CHANGELOG.md, .gitignore added.
-
-## Config (wrangler.jsonc)
-- migrations_dir, APP_VERSION var added. database_id + GOOGLE_CLIENT_ID
-  already baked in — do not overwrite with placeholders.
+No version bump: v1.1.0 never completed a deploy (it failed before the
+tag step), so re-running this on the same VERSION is fine.
