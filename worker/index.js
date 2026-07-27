@@ -393,14 +393,20 @@ app.post("/api/projects/:id/documents", requireOwner, async (c) => {
   }
   if (file.size > 10 * 1024 * 1024) return c.json({ error: "10MB以下にしてください" }, 400);
 
-  // version bump per (project, filename)
+  // version bump per (project, filename) — fetch the latest existing
+  // version's own row directly, not a MAX() mixed with other columns
+  // (which in SQLite wouldn't reliably come from that same row).
   const prev = await c.env.DB.prepare(
-    "SELECT MAX(version) AS v FROM documents WHERE project_id = ? AND filename = ?"
+    "SELECT id, doc_group_id, version FROM documents WHERE project_id = ? AND filename = ? ORDER BY version DESC LIMIT 1"
   ).bind(projectId, file.name).first();
-  const version = (prev?.v || 0) + 1;
+  const version = (prev?.version || 0) + 1;
 
   const id = uuid();
   const r2Key = `${projectId}/${id}.${ext}`;
+  // New file → this row starts its own group. New version of an
+  // existing file → inherit the group so comments carry across
+  // every version instead of being stuck on one specific upload.
+  const docGroupId = prev?.doc_group_id || id;
 
   // R2 first, then D1 — if the DB write fails we clean up the object,
   // never the other way round (a DB row pointing at nothing = broken doc).
@@ -409,9 +415,9 @@ app.post("/api/projects/:id/documents", requireOwner, async (c) => {
   });
   try {
     await c.env.DB.prepare(
-      `INSERT INTO documents (id, project_id, filename, r2_key, version, uploaded_by)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).bind(id, projectId, file.name, r2Key, version, c.get("user").id).run();
+      `INSERT INTO documents (id, project_id, filename, r2_key, version, uploaded_by, doc_group_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, projectId, file.name, r2Key, version, c.get("user").id, docGroupId).run();
   } catch (e) {
     await c.env.DOCS.delete(r2Key);
     throw e;
@@ -486,12 +492,17 @@ async function getAccessibleDoc(c, docId) {
 app.get("/api/documents/:id/comments", async (c) => {
   const doc = await getAccessibleDoc(c, c.req.param("id"));
   if (!doc) return c.json({ error: "not found" }, 404);
+  // Comments live on whichever version they were posted on, but a
+  // file's whole group shares one thread — so a comment left on v1
+  // still shows (and is actionable) while viewing v2, v3, etc.
   const { results } = await c.env.DB.prepare(
     `SELECT cm.id, cm.anchor, cm.body, cm.author_id, cm.parent_id, cm.resolved, cm.created_at,
             u.display_name AS author_name, u.role AS author_role
-       FROM comments cm JOIN users u ON u.id = cm.author_id
-      WHERE cm.document_id = ? ORDER BY cm.created_at ASC`
-  ).bind(doc.id).all();
+       FROM comments cm
+       JOIN users u ON u.id = cm.author_id
+       JOIN documents d ON d.id = cm.document_id
+      WHERE d.doc_group_id = ? ORDER BY cm.created_at ASC`
+  ).bind(doc.doc_group_id).all();
   return c.json(results.map(r => ({ ...r, anchor: r.anchor ? JSON.parse(r.anchor) : null })));
 });
 
@@ -508,8 +519,9 @@ app.post("/api/documents/:id/comments", async (c) => {
 
   if (parent_id) {
     const parent = await c.env.DB.prepare(
-      "SELECT 1 FROM comments WHERE id = ? AND document_id = ?"
-    ).bind(parent_id, doc.id).first();
+      `SELECT 1 FROM comments cm JOIN documents d ON d.id = cm.document_id
+        WHERE cm.id = ? AND d.doc_group_id = ?`
+    ).bind(parent_id, doc.doc_group_id).first();
     if (!parent) return c.json({ error: "返信先が見つかりません" }, 400);
   }
 
