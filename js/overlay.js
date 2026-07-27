@@ -16,6 +16,7 @@
   window.__lllsrLoaded = true;
 
   var pins = [];
+  var diffMarks = null;
   var mode = "browse";
   var layer = document.createElement("div");
   layer.id = "lllsr-layer";
@@ -187,6 +188,13 @@
     if (!mounted) return;
     layer.innerHTML = ""; hlLayer.innerHTML = "";
     sizeLayers();
+    if (diffMarks && diffMarks.length) {
+      var tn = textNodes();
+      diffMarks.forEach(function (mk) {
+        var r = rangeAt(mk.start, mk.end, tn);
+        if (r) drawRangeMarks(r, mk.type === "add" ? "rgba(84,130,53,.30)" : "rgba(178,58,42,.28)");
+      });
+    }
     pins.forEach(function (p) {
       var pt = anchorPoint(p);
       if (!pt) return;
@@ -251,18 +259,25 @@
       }
     }
     if (m.t === "diffmarks") {
+      diffMarks = m.marks || [];
       schedule();
-      setTimeout(function () {
-        var tn = textNodes();
-        (m.marks || []).forEach(function (mk) {
-          var r = rangeAt(mk.start, mk.end, tn);
-          if (r) drawRangeMarks(r, mk.type === "add" ? "rgba(84,130,53,.30)" : "rgba(178,58,42,.28)");
-        });
-        if (m.marks && m.marks.length) {
-          var first = rangeAt(m.marks[0].start, m.marks[0].end, tn);
-          if (first) scrollToPoint({ x: 0, y: first.getBoundingClientRect().top + window.scrollY, range: first });
-        }
-      }, 100);
+      if (!m.noScroll && diffMarks.length) {
+        setTimeout(function () {
+          var tn = textNodes();
+          var first = rangeAt(diffMarks[0].start, diffMarks[0].end, tn);
+          if (first) {
+            var target = first.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.35;
+            try { window.scrollTo({ top: Math.max(0, target), behavior: "smooth" }); }
+            catch (e) { window.scrollTo(0, Math.max(0, target)); }
+          }
+          // Flash every changed span together (not just the first word) so
+          // the whole edited phrase reads as one highlighted unit.
+          diffMarks.forEach(function (mk) {
+            var r = rangeAt(mk.start, mk.end, tn);
+            if (r) flashRect(r.getBoundingClientRect());
+          });
+        }, 100);
+      }
     }
   });
 })();

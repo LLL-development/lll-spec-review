@@ -186,6 +186,8 @@
     async function switchVersion(docId) {
       history.replaceState(null, "", `viewer.html?doc=${docId}`);
       await loadDoc(docId, false);
+      const sel = document.getElementById("version-select");
+      if (sel) sel.value = docId;
     }
 
     // ---------- comments data ----------
@@ -363,6 +365,12 @@
           body: JSON.stringify({ resolved }),
         });
         await refreshComments();
+        // Resolving (not reopening) → jump the preview to this comment's
+        // spot and show what changed there, like a mini git-diff view.
+        if (resolved) {
+          const c = comments.find(x => x.id === id);
+          if (c) await openDiffForComment(c);
+        }
       } catch (e) { toast(e.message, true); }
     }
 
@@ -422,8 +430,42 @@
       loadDoc(docMeta.id, false);
     }
 
-    async function fetchDocText(docId) {
-      return apiText(`/api/documents/${docId}/content`);
+    // Walk raw text nodes the same way overlay.js's textNodes() does —
+    // NOT .innerText, which collapses whitespace per CSS rendering rules
+    // and would drift out of sync with where overlay.js actually applies
+    // the resulting character offsets.
+    function rawTextOf(doc) {
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+        acceptNode(n) {
+          const tag = n.parentNode && n.parentNode.tagName;
+          return (tag === "SCRIPT" || tag === "STYLE") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+        },
+      });
+      let full = "", n;
+      while ((n = walker.nextNode())) full += n.nodeValue;
+      return full;
+    }
+
+    // Render a version OFF-SCREEN, the exact same way it's shown in the
+    // live viewer, and extract its raw text the same way overlay.js does.
+    // Using this identical extraction for BOTH sides of a diff — and for
+    // the eventual mark application inside the sandboxed iframe — keeps
+    // computed offsets and drawn offsets in the same coordinate space.
+    async function renderedTextOf(docId) {
+      const html = await docToHtml(docMeta.filename, docId);
+      return new Promise((resolve) => {
+        const ifr = document.createElement("iframe");
+        ifr.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:900px;height:1200px;visibility:hidden;";
+        ifr.sandbox = "allow-same-origin";
+        document.body.appendChild(ifr);
+        ifr.onload = () => {
+          const d = ifr.contentDocument;
+          const text = d && d.body ? rawTextOf(d) : "";
+          ifr.remove();
+          resolve(text);
+        };
+        ifr.src = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      });
     }
 
     // Convert stored text of a doc into the same rendered HTML the
@@ -446,28 +488,19 @@
       const compareId = document.getElementById("diff-compare").value;
       if (baseId === compareId) { toast("異なるバージョンを選んでください", true); return; }
       try {
-        const [oldText, newText] = await Promise.all([fetchDocText(baseId), fetchDocText(compareId)]);
-        // render the COMPARE (new) version, then paint added text
-        await renderVersion(compareId);
-        // extract visible text from rendered new doc for offset alignment
-        const newVisible = frame().contentDocument?.body?.innerText || newText;
-        const oldVisible = extOf(docMeta.filename) === "md"
-          ? stripToText(oldText) : oldText;
-        const { marks } = diffText(stripToText(oldText), newVisible);
+        // render the COMPARE (new) version in the visible frame for display,
+        // and extract BOTH sides' text via the off-screen renderer — the
+        // visible frame is sandboxed without allow-same-origin, so its
+        // contentDocument isn't reliably readable from here.
+        const [, oldVisible, newVisible] = await Promise.all([
+          renderVersion(compareId), renderedTextOf(baseId), renderedTextOf(compareId),
+        ]);
+        const { marks } = diffText(oldVisible, newVisible);
         frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks }, "*");
         toast(`${marks.length} 箇所の追加/変更をハイライトしました`);
       } catch (e) {
         toast("差分の生成に失敗しました: " + e.message, true);
       }
-    }
-
-    function stripToText(raw) {
-      const ext = extOf(docMeta.filename);
-      if (ext === "html" || ext === "htm" || ext === "svg") {
-        const d = new DOMParser().parseFromString(raw, "text/html");
-        return d.body ? d.body.innerText : raw;
-      }
-      return raw; // md/txt: compare source text
     }
 
     // From a comment: jump to its anchor in the CURRENT doc and, if
@@ -491,10 +524,11 @@
       if (docMeta.versions.length > 1 && isTextDoc()) {
         const prev = docMeta.versions[1];
         try {
-          const [oldText] = await Promise.all([fetchDocText(prev.id)]);
-          const newVisible = frame().contentDocument?.body?.innerText || "";
-          const { marks } = diffText(stripToText(oldText), newVisible);
-          frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks }, "*");
+          const [oldVisible, newVisible] = await Promise.all([
+            renderedTextOf(prev.id), renderedTextOf(docMeta.id),
+          ]);
+          const { marks } = diffText(oldVisible, newVisible);
+          frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks, noScroll: true }, "*");
         } catch (e) { /* non-fatal */ }
       }
       focusThread(c.id);
