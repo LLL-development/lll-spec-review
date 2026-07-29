@@ -184,6 +184,30 @@
     }
   }
 
+  // Same as drawRangeMarks, but also draws a horizontal strikethrough
+  // line through the middle of each line-rect — used for deletions,
+  // which now render on the version where the text still physically
+  // exists (real position, real range), unlike the old zero-width
+  // del-mark approach.
+  function drawDelMarks(range) {
+    var rects = range.getClientRects();
+    for (var i = 0; i < rects.length; i++) {
+      var rc = rects[i];
+      var m = document.createElement("div");
+      m.style.cssText =
+        "position:absolute;pointer-events:none;border-radius:2px;background:rgba(178,58,42,.16);mix-blend-mode:multiply;" +
+        "left:" + (rc.left + window.scrollX) + "px;top:" + (rc.top + window.scrollY) + "px;" +
+        "width:" + rc.width + "px;height:" + rc.height + "px;";
+      hlLayer.appendChild(m);
+      var line = document.createElement("div");
+      line.style.cssText =
+        "position:absolute;pointer-events:none;background:#B23A2A;height:2px;" +
+        "left:" + (rc.left + window.scrollX) + "px;top:" + (rc.top + window.scrollY + rc.height / 2 - 1) + "px;" +
+        "width:" + rc.width + "px;";
+      hlLayer.appendChild(line);
+    }
+  }
+
   function render() {
     if (!mounted) return;
     layer.innerHTML = ""; hlLayer.innerHTML = "";
@@ -192,7 +216,9 @@
       var tn = textNodes();
       diffMarks.forEach(function (mk) {
         var r = rangeAt(mk.start, mk.end, tn);
-        if (r) drawRangeMarks(r, mk.type === "add" ? "rgba(84,130,53,.30)" : "rgba(178,58,42,.28)");
+        if (!r) return;
+        if (mk.type === "del") drawDelMarks(r);
+        else drawRangeMarks(r, "rgba(84,130,53,.30)");
       });
     }
     pins.forEach(function (p) {

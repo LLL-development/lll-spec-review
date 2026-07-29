@@ -495,16 +495,21 @@
         const [, oldVisible, newVisible] = await Promise.all([
           renderVersion(compareId), renderedTextOf(baseId), renderedTextOf(compareId),
         ]);
-        const { marks } = diffText(oldVisible, newVisible);
-        frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks }, "*");
-        toast(`${marks.length} 箇所の追加/変更をハイライトしました`);
+        // The visible frame shows the newer (compare) version, so only
+        // newMarks (additions) have real positions to highlight here —
+        // deletions have no position in text that no longer contains them.
+        const { newMarks } = diffText(oldVisible, newVisible);
+        frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks: newMarks }, "*");
+        toast(`${newMarks.length} 箇所の追加/変更をハイライトしました`);
       } catch (e) {
         toast("差分の生成に失敗しました: " + e.message, true);
       }
     }
 
-    // From a comment: jump to its anchor in the CURRENT doc and, if
-    // newer versions exist, highlight what changed at that spot.
+    // From a comment: jump to its anchor and highlight what changed there.
+    // If the comment's target text was deleted, it no longer exists in the
+    // latest version — so we switch to the older version where it still
+    // lives, and show the deletion (strikethrough) there instead.
     async function reviewChanges(commentId) {
       const c = comments.find(x => x.id === commentId);
       if (!c) return;
@@ -512,25 +517,68 @@
     }
 
     async function openDiffForComment(c) {
-      // ensure we're on the latest version
-      const latest = docMeta.versions[0];
-      const onLatest = docMeta.id === latest.id;
-      if (!onLatest) { await switchVersion(latest.id); }
-      // focus the anchor in the latest doc
+      const versions = docMeta.versions; // [0] = latest ... [n-1] = oldest
+      let targetVersion = versions[0];
+      let marksToSend = [];
+
+      if (versions.length > 1 && isTextDoc()) {
+        try {
+          const needle = c.anchor
+            ? (c.anchor.kind === "range" ? c.anchor.quote : c.anchor.text)
+            : null;
+          const normalize = (text) => text.replace(/\s+/g, " ");
+          const hasQuote = (text, q) => normalize(text).indexOf(q) !== -1;
+
+          const texts = [await renderedTextOf(versions[0].id)];
+          let deletionFoundAt = -1;
+
+          if (needle && !hasQuote(texts[0], needle)) {
+            for (let k = 1; k < versions.length; k++) {
+              texts[k] = await renderedTextOf(versions[k].id);
+              if (hasQuote(texts[k], needle)) { deletionFoundAt = k; break; }
+            }
+          }
+
+          if (deletionFoundAt !== -1) {
+            const older = texts[deletionFoundAt];
+            const newer = texts[deletionFoundAt - 1];
+            const { newMarks, oldMarks } = diffText(older, newer);
+
+            const approxStart = normalize(older).indexOf(needle);
+            const approxEnd = approxStart + needle.length;
+            const overlapsNeedle = (m) => m.start < approxEnd && m.end > approxStart;
+
+            const relevantOldMarks = oldMarks.filter(overlapsNeedle);
+
+            const isReplacement = approxStart !== -1 && relevantOldMarks.some((m) => !m.pure);
+
+            if (isReplacement) {
+              targetVersion = versions[deletionFoundAt - 1];
+              marksToSend = newMarks;
+            } else {
+              targetVersion = versions[deletionFoundAt];
+              marksToSend = relevantOldMarks;
+            }
+          } else {
+            const prevText = texts[1] || await renderedTextOf(versions[1].id);
+            const { newMarks } = diffText(prevText, texts[0]);
+            targetVersion = versions[0];
+            marksToSend = newMarks;
+          }
+        } catch (e) { /* non-fatal */ }
+      }
+
+      const onTarget = docMeta.id === targetVersion.id;
+      if (!onTarget) { await switchVersion(targetVersion.id); }
+
+      if (docMeta.versions.length > 1 && isTextDoc()) {
+        frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks: marksToSend, noScroll: true }, "*");
+      }
+
       if (c.anchor) {
         frame().contentWindow.postMessage({ ns: "lllsr-host", t: "focus", id: c.id, anchor: c.anchor }, "*");
       }
-      // if there is an older version to compare against, mark diffs
-      if (docMeta.versions.length > 1 && isTextDoc()) {
-        const prev = docMeta.versions[1];
-        try {
-          const [oldVisible, newVisible] = await Promise.all([
-            renderedTextOf(prev.id), renderedTextOf(docMeta.id),
-          ]);
-          const { marks } = diffText(oldVisible, newVisible);
-          frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks, noScroll: true }, "*");
-        } catch (e) { /* non-fatal */ }
-      }
+
       focusThread(c.id);
     }
 

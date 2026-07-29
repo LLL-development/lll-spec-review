@@ -23,7 +23,6 @@ function tokenKey(tok) {
 function diffTokens(aTokens, bTokens) {
   const n = aTokens.length, m = bTokens.length;
   const aKeys = aTokens.map(tokenKey), bKeys = bTokens.map(tokenKey);
-  // Guard against pathological sizes (LCS is O(n*m))
   if (n * m > 4_000_000) {
     return [{ type: "del", tokens: aTokens }, { type: "add", tokens: bTokens }];
   }
@@ -34,52 +33,68 @@ function diffTokens(aTokens, bTokens) {
 
   const ops = [];
   let i = 0, j = 0;
-  const push = (type, tok) => {
+  const pushEqual = (aTok, bTok) => {
+    const last = ops[ops.length - 1];
+    if (last && last.type === "equal") { last.tokens.push(bTok); last.oldTokens.push(aTok); }
+    else ops.push({ type: "equal", tokens: [bTok], oldTokens: [aTok] });
+  };
+  const pushOther = (type, tok) => {
     const last = ops[ops.length - 1];
     if (last && last.type === type) last.tokens.push(tok);
     else ops.push({ type, tokens: [tok] });
   };
   while (i < n && j < m) {
-    // Use the NEW side's token on an "equal" match — the tokens can differ
-    // slightly in whitespace even when their keys match, and marks/offsets
-    // are computed against newText, so its exact characters must be used.
-    if (aKeys[i] === bKeys[j]) { push("equal", bTokens[j]); i++; j++; }
-    else if (dp[i + 1][j] >= dp[i][j + 1]) { push("del", aTokens[i]); i++; }
-    else { push("add", bTokens[j]); j++; }
+    if (aKeys[i] === bKeys[j]) { pushEqual(aTokens[i], bTokens[j]); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { pushOther("del", aTokens[i]); i++; }
+    else { pushOther("add", bTokens[j]); j++; }
   }
-  while (i < n) push("del", aTokens[i++]);
-  while (j < m) push("add", bTokens[j++]);
+  while (i < n) pushOther("del", aTokens[i++]);
+  while (j < m) pushOther("add", bTokens[j++]);
   return ops;
 }
 
-// Public: diff two strings → { ops, addMarks }
-// addMarks are {start,end,type} char offsets into the NEW text,
-// used to paint highlights in the updated document.
+// Public: diff two strings → { ops, newMarks, oldMarks }
+// newMarks are {start,end,type:"add"} char offsets into NEW text.
+// oldMarks are {start,end,type:"del",pure} char offsets into OLD text.
+// pure:true means nothing replaced this text (safe to show as a
+// standalone deletion). pure:false means an "add" op sits directly
+// next to it — this del is really one side of a replacement, and
+// should be shown via its paired addition instead, not as a deletion.
 function diffText(oldText, newText) {
   const ops = diffTokens(tokenize(oldText), tokenize(newText));
-  const marks = [];
-  let pos = 0; // char offset into new text
-  for (const op of ops) {
-    const str = op.tokens.join("");
+  const newMarks = [];
+  const oldMarks = [];
+  let newPos = 0;
+  let oldPos = 0;
+  for (let idx = 0; idx < ops.length; idx++) {
+    const op = ops[idx];
     if (op.type === "add") {
-      // Trim the mark to the real content within this run — an add-run
-      // can end up with a whitespace-only token bundled at its edge
-      // (e.g. a trailing newline before the next element), and leaving
-      // that in the mark's span lets the highlight spill past its
-      // paragraph into whatever structural gap follows.
+      const str = op.tokens.join("");
       const trimmed = str.trim();
       if (trimmed) {
         const lead = str.length - str.trimStart().length;
         const trail = str.length - str.trimEnd().length;
-        marks.push({ start: pos + lead, end: pos + str.length - trail, type: "add" });
+        newMarks.push({ start: newPos + lead, end: newPos + str.length - trail, type: "add" });
       }
-      pos += str.length;
+      newPos += str.length;
+    } else if (op.type === "del") {
+      const str = op.tokens.join("");
+      const trimmed = str.trim();
+      if (trimmed) {
+        const lead = str.length - str.trimStart().length;
+        const trail = str.length - str.trimEnd().length;
+        const prevType = ops[idx - 1] && ops[idx - 1].type;
+        const nextType = ops[idx + 1] && ops[idx + 1].type;
+        const pure = prevType !== "add" && nextType !== "add";
+        oldMarks.push({ start: oldPos + lead, end: oldPos + str.length - trail, type: "del", pure });
+      }
+      oldPos += str.length;
     } else if (op.type === "equal") {
-      pos += str.length;
+      newPos += op.tokens.join("").length;
+      oldPos += op.oldTokens.join("").length;
     }
-    // del contributes nothing to new-text offsets
   }
-  return { ops, marks };
+  return { ops, newMarks, oldMarks };
 }
 
 // Render ops to inline HTML for the side-by-side diff panel
