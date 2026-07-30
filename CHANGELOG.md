@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.1 — reply draft persistence
+
+- Fixed reply-box drafts being silently lost during the 15s comment
+  auto-poll or when switching tabs and back — draft text and the open/closed
+  state of a reply box now survive the comment-thread re-render both trigger.
+- Fixed a related bug where opening a reply on one comment didn't close a
+  reply box already open on another, allowing multiple boxes to appear open
+  at once.
+- Fixed the underlying CSS issue where `.reply-box` had an unconditional
+  `display: flex`, overriding the `hidden` attribute so a reply box could
+  render visible even when it shouldn't.
+
 ## 1.1.0 — text-range comments & version diff
 
 - Comments can now anchor to a **highlighted text range** (not just a clicked
