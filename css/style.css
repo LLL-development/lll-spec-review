@@ -395,7 +395,8 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
 }
 .link-btn:hover { color: var(--shu); text-decoration: underline; }
 
-.reply-box { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.reply-box { margin-top: 8px; flex-direction: column; gap: 6px; }
+.reply-box:not([hidden]) { display: flex; }
 .reply-box textarea, .compose textarea {
   width: 100%; padding: 8px 10px; font: inherit; font-size: 13px;
   border: 1px solid var(--line); border-radius: var(--radius); resize: vertical;

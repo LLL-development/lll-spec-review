@@ -99,6 +99,12 @@
       });
     }
 
+    document.getElementById("threads").addEventListener("input", (e) => {
+      if (e.target.matches(".reply-box textarea") && openReplyId) {
+        openReplyDraft = e.target.value;
+      }
+    });
+
     async function loadDoc(docId, buildVersionList) {
       frameReady = false;
       try {
@@ -121,9 +127,6 @@
         ).join("");
       }
 
-      // Fetch the doc + our overlay script, convert to HTML if needed
-      // (md/txt/images), inject the overlay, render as a blob in the
-      // sandboxed iframe — so pin comments work on every format.
       try {
         const overlayP = apiText("/js/overlay.js");
         const html = await docToHtml(docMeta.filename, docId);
@@ -141,8 +144,6 @@
       cancelCompose();
       await refreshComments();
     }
-
-    // ---------- format converters ----------
 
     const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 
@@ -179,7 +180,6 @@
       if (ext === "html" || ext === "htm") return text;
       if (ext === "svg") return docWrapper(text, { center: true });
       if (ext === "md") return docWrapper(marked.parse(text));
-      // txt and anything else: preformatted
       return docWrapper(`<pre style="white-space:pre-wrap">${escapeHtml(text)}</pre>`);
     }
 
@@ -189,8 +189,6 @@
       const sel = document.getElementById("version-select");
       if (sel) sel.value = docId;
     }
-
-    // ---------- comments data ----------
 
     async function refreshComments() {
       if (!docMeta) return;
@@ -210,8 +208,6 @@
       if (c.anchor.text) return c.anchor.text.slice(0, 48);
       return "";
     }
-
-    // ---------- iframe bridge ----------
 
     function onFrameMessage(e) {
       const m = e.data || {};
@@ -243,8 +239,6 @@
       frame().contentWindow.postMessage({ ns: "lllsr-host", t: "focus", id }, "*");
     }
 
-    // ---------- comment mode ----------
-
     function toggleMode() {
       mode = mode === "comment" ? "browse" : "comment";
       const btn = document.getElementById("mode-btn");
@@ -254,8 +248,6 @@
       document.getElementById("mode-hint").hidden = mode !== "comment";
       sendState();
     }
-
-    // ---------- compose ----------
 
     function openCompose() {
       openPanelIfMobile();
@@ -286,8 +278,6 @@
         toast("コメントを投稿しました");
       } catch (e) { toast(e.message, true); }
     }
-
-    // ---------- threads UI ----------
 
     function renderThreads() {
       const el = document.getElementById("threads");
@@ -339,12 +329,33 @@
           </div>
         </div>`;
       }).join("");
+
+      if (openReplyId) {
+        const box = document.getElementById(`reply-${openReplyId}`);
+        if (box) {
+          box.hidden = false;
+          const ta = box.querySelector("textarea");
+          ta.value = openReplyDraft;
+          ta.focus();
+          ta.selectionStart = ta.selectionEnd = ta.value.length;
+        }
+      }
     }
+
+    let openReplyId = null;
+    let openReplyDraft = "";
 
     function toggleReply(id) {
       const box = document.getElementById(`reply-${id}`);
-      box.hidden = !box.hidden;
-      if (!box.hidden) box.querySelector("textarea").focus();
+      const opening = box.hidden;
+      if (openReplyId && openReplyId !== id) {
+        const prevBox = document.getElementById(`reply-${openReplyId}`);
+        if (prevBox) prevBox.hidden = true;
+      }
+      box.hidden = !opening;
+      openReplyId = opening ? id : null;
+      openReplyDraft = "";
+      if (opening) box.querySelector("textarea").focus();
     }
 
     async function postReply(parentId) {
@@ -353,6 +364,8 @@
       if (!body) return;
       try {
         await apiPost(`/api/documents/${docMeta.id}/comments`, { body, parent_id: parentId });
+        openReplyId = null;
+        openReplyDraft = "";
         await refreshComments();
       } catch (e) { toast(e.message, true); }
     }
@@ -365,8 +378,6 @@
           body: JSON.stringify({ resolved }),
         });
         await refreshComments();
-        // Resolving (not reopening) → jump the preview to this comment's
-        // spot and show what changed there, like a mini git-diff view.
         if (resolved) {
           const c = comments.find(x => x.id === id);
           if (c) await openDiffForComment(c);
@@ -400,8 +411,6 @@
       }
     }
 
-    // ---------- diff / version compare ----------
-
     const TEXT_EXTS = ["html", "htm", "md", "txt", "svg"];
     function isTextDoc() { return TEXT_EXTS.includes(extOf(docMeta.filename)); }
 
@@ -417,7 +426,6 @@
       bar.hidden = !show;
       if (show) {
         const vs = docMeta.versions;
-        // default: compare previous → current
         const base = vs[1] ? vs[1].id : vs[0].id;
         const compare = vs[0].id;
         document.getElementById("diff-base").innerHTML = versionOptions(base);
@@ -426,14 +434,9 @@
     }
     function closeDiff() {
       document.getElementById("diff-bar").hidden = true;
-      // reload the current doc clean (clears diff marks)
       loadDoc(docMeta.id, false);
     }
 
-    // Walk raw text nodes the same way overlay.js's textNodes() does —
-    // NOT .innerText, which collapses whitespace per CSS rendering rules
-    // and would drift out of sync with where overlay.js actually applies
-    // the resulting character offsets.
     function rawTextOf(doc) {
       const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
         acceptNode(n) {
@@ -446,11 +449,6 @@
       return full;
     }
 
-    // Render a version OFF-SCREEN, the exact same way it's shown in the
-    // live viewer, and extract its raw text the same way overlay.js does.
-    // Using this identical extraction for BOTH sides of a diff — and for
-    // the eventual mark application inside the sandboxed iframe — keeps
-    // computed offsets and drawn offsets in the same coordinate space.
     async function renderedTextOf(docId) {
       const html = await docToHtml(docMeta.filename, docId);
       return new Promise((resolve) => {
@@ -468,8 +466,6 @@
       });
     }
 
-    // Convert stored text of a doc into the same rendered HTML the
-    // viewer shows, so diff offsets line up with what the user sees.
     async function renderVersion(docId) {
       const filename = docMeta.filename;
       const html = await docToHtml(filename, docId);
@@ -488,16 +484,9 @@
       const compareId = document.getElementById("diff-compare").value;
       if (baseId === compareId) { toast("異なるバージョンを選んでください", true); return; }
       try {
-        // render the COMPARE (new) version in the visible frame for display,
-        // and extract BOTH sides' text via the off-screen renderer — the
-        // visible frame is sandboxed without allow-same-origin, so its
-        // contentDocument isn't reliably readable from here.
         const [, oldVisible, newVisible] = await Promise.all([
           renderVersion(compareId), renderedTextOf(baseId), renderedTextOf(compareId),
         ]);
-        // The visible frame shows the newer (compare) version, so only
-        // newMarks (additions) have real positions to highlight here —
-        // deletions have no position in text that no longer contains them.
         const { newMarks } = diffText(oldVisible, newVisible);
         frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks: newMarks }, "*");
         toast(`${newMarks.length} 箇所の追加/変更をハイライトしました`);
@@ -506,10 +495,6 @@
       }
     }
 
-    // From a comment: jump to its anchor and highlight what changed there.
-    // If the comment's target text was deleted, it no longer exists in the
-    // latest version — so we switch to the older version where it still
-    // lives, and show the deletion (strikethrough) there instead.
     async function reviewChanges(commentId) {
       const c = comments.find(x => x.id === commentId);
       if (!c) return;
@@ -517,7 +502,7 @@
     }
 
     async function openDiffForComment(c) {
-      const versions = docMeta.versions; // [0] = latest ... [n-1] = oldest
+      const versions = docMeta.versions;
       let targetVersion = versions[0];
       let marksToSend = [];
 
