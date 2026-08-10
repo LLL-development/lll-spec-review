@@ -1,0 +1,21 @@
+feat: document download & fullscreen viewing (v1.2.0)
+
+Two viewer additions requested for reviewing uploaded files.
+
+worker/index.js
+- NEW GET /api/documents/:id/download — serves the original file with
+  its real mime type and a Content-Disposition attachment header, so it
+  downloads instead of rendering. RFC 5987 filename* encoding preserves
+  Japanese filenames (ASCII fallback for old clients). Access-checked
+  like the content route.
+
+viewer.html
+- ⬇ Download button: fetches via the API (carrying the auth cookie),
+  then saves the blob client-side so a proper save dialog appears
+- ⛶ Fullscreen button: expands the document frame via the Fullscreen
+  API (Escape or button to exit); button title/state track fullscreen
+
+css/style.css
+- :fullscreen styles for the document frame
+
+VERSION → 1.2.0, CHANGELOG updated.

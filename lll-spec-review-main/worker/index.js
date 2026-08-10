@@ -477,6 +477,37 @@ app.get("/api/documents/:id/content", async (c) => {
   });
 });
 
+// Download the original uploaded file (forces a save dialog).
+// Unlike /content, this sets the real mime + a Content-Disposition
+// attachment header with the original filename, so it downloads
+// rather than rendering. Still access-checked.
+const DL_MIME = {
+  html: "text/html", htm: "text/html", md: "text/markdown",
+  txt: "text/plain", svg: "image/svg+xml", png: "image/png",
+  jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
+};
+app.get("/api/documents/:id/download", async (c) => {
+  const doc = await c.env.DB.prepare("SELECT * FROM documents WHERE id = ?")
+    .bind(c.req.param("id")).first();
+  if (!doc || !(await canAccessProject(c.env.DB, c.get("user"), doc.project_id))) {
+    return c.json({ error: "not found" }, 404);
+  }
+  const obj = await c.env.DOCS.get(doc.r2_key);
+  if (!obj) return c.json({ error: "file missing" }, 404);
+  const ext = (doc.filename.split(".").pop() || "").toLowerCase();
+  // RFC 5987 filename* handles non-ASCII (Japanese) filenames safely,
+  // with an ASCII fallback for older clients.
+  const asciiName = doc.filename.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "");
+  const utf8Name = encodeURIComponent(doc.filename);
+  return new Response(obj.body, {
+    headers: {
+      "Content-Type": (DL_MIME[ext] || "application/octet-stream") + (DL_MIME[ext]?.startsWith("text") || ext === "svg" ? "; charset=utf-8" : ""),
+      "Content-Disposition": `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`,
+      "Cache-Control": "private, no-store",
+    },
+  });
+});
+
 // ============================================================
 // COMMENTS (Phase 2)
 // ============================================================
