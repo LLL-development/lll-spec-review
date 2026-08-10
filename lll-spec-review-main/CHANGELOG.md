@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 — download & fullscreen
+
+- **Download**: ⬇ button in the viewer toolbar saves the original uploaded
+  file with its real filename and mime type (handles Japanese filenames).
+- **Fullscreen**: ⛶ button expands the document to fill the screen for
+  distraction-free reading (Escape or the button exits).
+
 ## 1.1.1 — reply draft persistence
 
 - Fixed reply-box drafts being silently lost during the 15s comment

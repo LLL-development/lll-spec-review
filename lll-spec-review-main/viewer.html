@@ -22,6 +22,8 @@
     <button class="btn btn-ghost btn-sm" id="diff-btn" style="display:none" onclick="toggleDiffBar()">
       🔀 変更を見る / Diff
     </button>
+    <button class="btn btn-ghost btn-sm" id="download-btn" onclick="downloadDoc()" title="ダウンロード / Download">⬇</button>
+    <button class="btn btn-ghost btn-sm" id="fullscreen-btn" onclick="toggleFullscreen()" title="全画面表示 / Fullscreen">⛶</button>
     <button class="btn btn-ghost btn-sm panel-toggle" id="panel-btn" onclick="togglePanel()">
       💬 <span id="comment-count">0</span>
     </button>
@@ -566,6 +568,55 @@
 
       focusThread(c.id);
     }
+
+    // ---------- download ----------
+
+    async function downloadDoc() {
+      if (!docMeta) return;
+      const btn = document.getElementById("download-btn");
+      btn.disabled = true;
+      try {
+        // Fetch through the API (carries the auth cookie), then save the
+        // blob client-side so the browser shows a proper save dialog.
+        const res = await fetch(`/api/documents/${docMeta.id}/download`, { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = docMeta.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (e) {
+        toast("ダウンロードに失敗しました: " + e.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ---------- fullscreen ----------
+
+    function toggleFullscreen() {
+      const wrap = document.querySelector(".frame-wrap");
+      if (!document.fullscreenElement) {
+        (wrap.requestFullscreen ? wrap.requestFullscreen() : wrap.webkitRequestFullscreen?.())?.catch?.(() => {
+          toast("全画面表示に対応していません", true);
+        });
+      } else {
+        document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen?.();
+      }
+    }
+
+    document.addEventListener("fullscreenchange", () => {
+      const wrap = document.querySelector(".frame-wrap");
+      const btn = document.getElementById("fullscreen-btn");
+      const on = !!document.fullscreenElement;
+      wrap.classList.toggle("is-fullscreen", on);
+      btn.textContent = on ? "⛶" : "⛶";
+      btn.title = on ? "全画面を終了 / Exit fullscreen" : "全画面表示 / Fullscreen";
+    });
 
     // ---------- panel (mobile bottom sheet) ----------
 

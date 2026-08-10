@@ -1,8 +1,0 @@
-fix: bump GitHub Actions Node to 22 (wrangler requires >=22)
-
-Wrangler's latest release requires Node.js >= 22; the deploy workflow
-pinned Node 20 (inherited from the archquest reference), causing the
-"Apply database migrations" step to fail. Bumped setup-node to 22.
-
-No version bump: v1.1.0 never completed a deploy (it failed before the
-tag step), so re-running this on the same VERSION is fine.
