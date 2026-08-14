@@ -137,12 +137,34 @@
               <div class="item-side">
                 <span class="badge badge-shu">v${latest.version}</span>
                 <span class="badge">${g.versions.length} version${g.versions.length > 1 ? "s" : ""}</span>
+                <button class="btn btn-ghost btn-sm" onclick="event.preventDefault(); event.stopPropagation(); downloadDoc(${i})">⬇ ダウンロード / Download</button>
                 ${canManage ? `<button class="btn btn-ghost btn-sm" onclick="event.preventDefault(); event.stopPropagation(); deleteDocGroup(${i})">削除 / Delete</button>` : ""}
               </div>
             </a>`;
         }).join("");
       } catch (e) {
         el.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    async function downloadDoc(i) {
+      const g = docGroups[i];
+      if (!g) return;
+      const latest = g.versions[0];
+      try {
+        const res = await fetch(`/api/documents/${latest.id}/content`, { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = g.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        toast(`ダウンロード失敗: ${e.message}`, true);
       }
     }
 
