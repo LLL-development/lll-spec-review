@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 — download & fullscreen
+
+- Added a **⬇ ダウンロード / Download** button to each document row in the
+  project list view, saving the document as an .html file with its
+  original filename.
+- Added a **⛶ フルスクリーン / Fullscreen** button to the viewer toolbar,
+  expanding the document into true browser fullscreen (Esc to exit),
+  reachable whether Diff mode is open or closed.
+- Fixed the diff-bar showing on every page load regardless of Diff
+  toggle state — `.diff-bar` had an unconditional `display: flex`
+  overriding the `hidden` attribute, the same category of bug as the
+  1.1.1 reply-box fix. It now only appears when 🔀 変更を見る/Diff is
+  clicked, as intended.
+
 ## 1.1.1 — reply draft persistence
 
 - Fixed reply-box drafts being silently lost during the 15s comment

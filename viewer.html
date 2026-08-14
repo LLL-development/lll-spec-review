@@ -22,6 +22,9 @@
     <button class="btn btn-ghost btn-sm" id="diff-btn" style="display:none" onclick="toggleDiffBar()">
       🔀 変更を見る / Diff
     </button>
+    <button class="btn btn-ghost btn-sm" id="fullscreen-btn" onclick="toggleFullscreen()">
+      ⛶ フルスクリーン / Fullscreen
+    </button>
     <button class="btn btn-ghost btn-sm panel-toggle" id="panel-btn" onclick="togglePanel()">
       💬 <span id="comment-count">0</span>
     </button>
@@ -40,7 +43,7 @@
   </div>
 
   <div class="viewer-main">
-    <div class="frame-wrap">
+    <div class="frame-wrap" id="frame-wrap">
       <iframe id="doc-frame" sandbox="allow-scripts allow-popups" title="Document preview"></iframe>
       <div class="mode-hint" id="mode-hint" hidden>クリック、またはテキストを選択してコメント / Click an element or select text to comment</div>
     </div>
@@ -576,6 +579,27 @@
       if (window.matchMedia("(max-width: 900px)").matches) {
         document.getElementById("panel").classList.add("open");
       }
+    }
+
+    // ---------- fullscreen ----------
+    function toggleFullscreen() {
+      const el = document.getElementById("frame-wrap");
+      if (!document.fullscreenElement) {
+        (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el)
+          .catch((e) => toast(`フルスクリーン表示に失敗しました: ${e.message}`, true));
+      } else {
+        (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+      }
+    }
+
+    document.addEventListener("fullscreenchange", updateFullscreenBtn);
+    document.addEventListener("webkitfullscreenchange", updateFullscreenBtn);
+    function updateFullscreenBtn() {
+      const btn = document.getElementById("fullscreen-btn");
+      if (!btn) return;
+      btn.innerHTML = document.fullscreenElement
+        ? "⛶ 元に戻す / Exit fullscreen"
+        : "⛶ フルスクリーン / Fullscreen";
     }
 
     init();
