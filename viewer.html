@@ -94,8 +94,8 @@
       if (!profile) return;
       const docId = qs("doc");
       if (!docId) { location.href = "dashboard.html"; return; }
-      await loadDoc(docId, true);
       window.addEventListener("message", onFrameMessage);
+      await loadDoc(docId, true);
       pollTimer = setInterval(refreshComments, 15000);
       document.addEventListener("visibilitychange", () => {
         if (!document.hidden) refreshComments();
