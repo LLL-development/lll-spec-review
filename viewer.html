@@ -12,18 +12,20 @@
     <a class="brand" href="dashboard.html" style="gap:8px;">
       <span class="hanko" style="width:30px;height:30px;font-size:17px;" data-brand="mark"></span>
     </a>
-    <a class="btn btn-ghost btn-sm" id="back-link" href="dashboard.html">← 戻る / Back</a>
+    <a class="btn btn-ghost btn-sm" id="back-link" href="dashboard.html">
+      <span class="label-desktop">← 戻る / Back</span><span class="label-mobile">← 戻る</span>
+    </a>
     <span class="doc-name" id="doc-name">読み込み中…</span>
     <select id="version-select" onchange="switchVersion(this.value)"></select>
     <div class="spacer"></div>
     <button class="btn btn-sm btn-shu" id="mode-btn" style="display:none" onclick="toggleMode()">
-      📍 コメントモード
+      <span class="label-desktop">📍 コメントモード</span><span class="label-mobile">📍 コメント</span>
     </button>
     <button class="btn btn-ghost btn-sm" id="diff-btn" style="display:none" onclick="toggleDiffBar()">
-      🔀 変更を見る / Diff
+      <span class="label-desktop">🔀 変更を見る / Diff</span><span class="label-mobile">🔀 変更</span>
     </button>
     <button class="btn btn-ghost btn-sm" id="fullscreen-btn" onclick="toggleFullscreen()">
-      ⛶ フルスクリーン / Fullscreen
+      <span class="label-desktop">⛶ フルスクリーン / Fullscreen</span><span class="label-mobile">⛶ 全画面</span>
     </button>
     <button class="btn btn-ghost btn-sm panel-toggle" id="panel-btn" onclick="togglePanel()">
       💬 <span id="comment-count">0</span>
@@ -45,7 +47,10 @@
   <div class="viewer-main">
     <div class="frame-wrap" id="frame-wrap">
       <iframe id="doc-frame" sandbox="allow-scripts allow-popups" title="Document preview"></iframe>
-      <div class="mode-hint" id="mode-hint" hidden>クリック、またはテキストを選択してコメント / Click an element or select text to comment</div>
+      <div class="mode-hint" id="mode-hint" hidden>
+        <span class="hint-desktop">クリック、またはテキストを選択してコメント / Click an element or select text to comment</span>
+        <span class="hint-mobile">タップまたはテキスト選択でコメント</span>
+      </div>
     </div>
 
     <aside class="comment-panel" id="panel">
@@ -242,12 +247,21 @@
       frame().contentWindow.postMessage({ ns: "lllsr-host", t: "focus", id }, "*");
     }
 
+    function setButtonLabels(btn, desktopLabel, mobileLabel) {
+      btn.querySelector(".label-desktop").textContent = desktopLabel;
+      btn.querySelector(".label-mobile").textContent = mobileLabel;
+    }
+
     function toggleMode() {
       mode = mode === "comment" ? "browse" : "comment";
       const btn = document.getElementById("mode-btn");
       btn.classList.toggle("btn-shu", mode !== "comment");
       btn.classList.toggle("mode-active", mode === "comment");
-      btn.textContent = mode === "comment" ? "✓ コメントモード中" : "📍 コメントモード";
+      setButtonLabels(
+        btn,
+        mode === "comment" ? "✓ コメントモード中" : "📍 コメントモード",
+        mode === "comment" ? "✓ コメント中" : "📍 コメント"
+      );
       document.getElementById("mode-hint").hidden = mode !== "comment";
       sendState();
     }
@@ -597,9 +611,11 @@
     function updateFullscreenBtn() {
       const btn = document.getElementById("fullscreen-btn");
       if (!btn) return;
-      btn.innerHTML = document.fullscreenElement
-        ? "⛶ 元に戻す / Exit fullscreen"
-        : "⛶ フルスクリーン / Fullscreen";
+      setButtonLabels(
+        btn,
+        document.fullscreenElement ? "⛶ 元に戻す / Exit fullscreen" : "⛶ フルスクリーン / Fullscreen",
+        document.fullscreenElement ? "⛶ 戻す" : "⛶ 全画面"
+      );
     }
 
     init();
