@@ -249,6 +249,7 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
 .viewer-toolbar .doc-name { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: .04em; }
 .viewer-toolbar select { width: auto; padding: 6px 10px; font-size: 13px; }
 .viewer-toolbar .spacer { flex: 1; }
+.viewer-toolbar .label-mobile { display: none; }
 
 #doc-frame {
   flex: 1;
@@ -318,6 +319,7 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
   max-width: 90%;
   text-align: center;
 }
+.mode-hint .hint-mobile { display: none; }
 
 #mode-btn.mode-active { background: var(--ink); border-color: var(--ink); color: var(--washi-raised); }
 
@@ -458,10 +460,21 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
 @media (max-width: 640px) {
   .viewer-toolbar { padding: 8px 10px; gap: 8px; }
   .viewer-toolbar .doc-name {
-    font-size: 13px; max-width: 34vw;
+    flex: 1; min-width: 70px; max-width: none; font-size: 13px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .viewer-toolbar #back-link { padding: 6px 8px; }
+  .viewer-toolbar .spacer { flex-basis: 100%; height: 0; }
+  .viewer-toolbar .btn { min-height: 40px; padding: 8px 10px; white-space: nowrap; }
+  .viewer-toolbar select { min-height: 40px; }
+  .viewer-toolbar .label-desktop { display: none; }
+  .viewer-toolbar .label-mobile { display: inline; }
+  .mode-hint {
+    top: auto; bottom: 12px;
+    width: max-content; max-width: calc(100% - 24px);
+    padding: 7px 12px; font-size: 11px;
+  }
+  .mode-hint .hint-desktop { display: none; }
+  .mode-hint .hint-mobile { display: inline; }
   .header-user .btn { padding: 6px 8px; font-size: 11px; }
 }
 
