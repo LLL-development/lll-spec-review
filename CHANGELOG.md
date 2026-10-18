@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1 — dependency security updates
+
+- Update Hono to 4.13.13 and Wrangler to 4.151.1, resolving the dependency audit advisories without changing application features.
+
 ## 1.2.0 — download & fullscreen
 
 - Added a **⬇ ダウンロード / Download** button to each document row in the

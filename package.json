@@ -11,9 +11,9 @@
     "db:remote": "wrangler d1 execute lll-spec-review --remote --file=./schema.sql"
   },
   "dependencies": {
-    "hono": "^4"
+    "hono": "^4.13.13"
   },
   "devDependencies": {
-    "wrangler": "^4"
+    "wrangler": "^4.151.1"
   }
 }
