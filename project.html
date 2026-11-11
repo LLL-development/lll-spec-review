@@ -11,80 +11,84 @@
   <header id="app-header"></header>
 
   <main class="container">
-    <div class="eyebrow">Project</div>
-    <h1 class="page-title" id="project-title">読み込み中…</h1>
+    <div class="eyebrow" data-i18n="project.eyebrow"></div>
+    <h1 class="page-title" id="project-title" data-i18n="project.loading"></h1>
 
     <!-- Upload (internal only) -->
     <div class="card dropzone" id="upload-card" style="display:none; margin-bottom:8px;">
       <div class="form-row">
         <div class="field">
-          <label>ファイルをアップロード / Upload (HTML, Markdown, テキスト, 画像)</label>
+          <label for="file-input" data-i18n="project.label.upload"></label>
           <div class="file-picker">
             <input type="file" id="file-input" multiple accept=".html,.htm,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg" onchange="updateFileNames()">
-            <label class="btn btn-ghost" for="file-input">📁 ファイルを選択 / Choose</label>
-            <span class="file-names" id="file-names">未選択 / No file selected</span>
+            <label class="btn btn-ghost" for="file-input" data-i18n="project.chooseFile"></label>
+            <span class="file-names" id="file-names" data-i18n="project.noFile"></span>
           </div>
         </div>
-        <button class="btn btn-shu" id="upload-btn" onclick="uploadSelected()">アップロード / Upload</button>
+        <button class="btn btn-shu" id="upload-btn" onclick="uploadSelected()" data-i18n="project.submit.upload"></button>
       </div>
-      <div class="drop-hint">⬇ ここにファイルをドラッグ&ドロップでもOK / or drag &amp; drop files here</div>
-      <p style="font-size:12px; color:var(--ink-soft); margin-top:8px;">
-        同じファイル名で再アップロードすると、新しいバージョンとして保存されます。
+      <div class="drop-hint" data-i18n="project.dropHint"></div>
+      <p style="font-size:12px; color:var(--ink-soft); margin-top:8px;" data-i18n="project.note.versions">
       </p>
     </div>
 
-    <h2 class="section-title">ドキュメント / Documents</h2>
-    <div class="list" id="doc-list"><div class="empty">読み込み中…</div></div>
+    <h2 class="section-title" data-i18n="project.section.documents"></h2>
+    <div class="list" id="doc-list"><div class="empty" data-i18n="project.loading"></div></div>
 
     <!-- Members (internal only) -->
     <section id="members-section" style="display:none">
-      <h2 class="section-title">メンバー / Members</h2>
+      <h2 class="section-title" data-i18n="project.section.members"></h2>
       <div class="card" style="margin-bottom:12px;">
         <div class="form-row">
           <div class="field">
-            <label for="member-email">メールアドレス / Email</label>
+            <label for="member-email" data-i18n="project.label.email"></label>
             <input type="email" id="member-email" placeholder="client@example.com">
           </div>
           <div class="field">
-            <label for="member-name">表示名 / Name (新規の場合)</label>
-            <input type="text" id="member-name" placeholder="例: 田中様">
+            <label for="member-name" data-i18n="project.label.name"></label>
+            <input type="text" id="member-name" data-i18n-placeholder="project.placeholder.name">
           </div>
           <div class="field" style="flex:0 0 200px;">
-            <label for="member-role">権限 / Role</label>
+            <label for="member-role" data-i18n="project.label.role"></label>
             <select id="member-role">
-              <option value="client_commenter">コメント可 / Can comment</option>
-              <option value="client_viewer">閲覧のみ / View only</option>
-              <option value="owner">オーナー / Owner</option>
+              <option value="client_commenter" data-i18n="project.role.client_commenter"></option>
+              <option value="client_viewer" data-i18n="project.role.client_viewer"></option>
+              <option value="owner" data-i18n="project.role.owner"></option>
             </select>
           </div>
-          <button class="btn" onclick="inviteMember()">招待 / Invite</button>
+          <button class="btn" onclick="inviteMember()" data-i18n="project.submit.invite"></button>
         </div>
-        <p style="font-size:12px; color:var(--ink-soft); margin-top:8px;">
-          アカウントが未登録のメールアドレスなら、自動でアカウントを作成しパスワードを生成します。
+        <p style="font-size:12px; color:var(--ink-soft); margin-top:8px;" data-i18n="project.note.invite">
         </p>
         <div class="card pw-card" id="pw-reveal" hidden>
           <div id="pw-title" style="font-weight:700; font-size:14px; margin-bottom:6px;"></div>
           <code id="pw-value"></code>
-          <button class="btn btn-ghost btn-sm" onclick="copyPassword()" style="margin-left:8px;">コピー / Copy</button>
-          <div class="pw-note">⚠ このパスワードは今回しか表示されません。クライアントに安全な方法で共有してください。</div>
+          <button class="btn btn-ghost btn-sm" onclick="copyPassword()" style="margin-left:8px;" data-i18n="project.copy"></button>
+          <div class="pw-note" data-i18n="project.pw.note"></div>
         </div>
       </div>
       <div class="list" id="member-list"></div>
     </section>
   </main>
 
+  <script src="js/i18n.js"></script>
   <script src="js/brand.js"></script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
   <script>
+    // i18n availability guard (same spirit as dashboard.html): if js/i18n.js failed
+    // to load (404 etc.), fall back to the key string instead of ReferenceError.
+    function tOr(key, params) {
+      return (window.I18N && typeof I18N.t === "function") ? I18N.t(key, params) : key;
+    }
+
     const projectId = qs("id");
     let canManage = false;
     let docGroups = [];
-    const ROLE_LABEL = {
-      owner: "オーナー / Owner",
-      client_commenter: "コメント可 / Can comment",
-      client_viewer: "閲覧のみ / View only"
-    };
+    // Last successful payloads / server errors (null = none yet). Cached so
+    // I18N.onChange can repaint lists in the new language without re-fetching.
+    let docsCache = null, docsError = null;   // docsError: server message as-is
+    let membersCache = null, membersError = null;
 
     async function init() {
       const profile = await requireAuth();
@@ -92,13 +96,24 @@
       renderHeader();
       if (!projectId) { location.href = "dashboard.html"; return; }
 
+      // Repaint dynamic lists on language switch: their nodes are built in JS
+      // and are NOT covered by apply()'s [data-i18n*] sweep. Subscribe BEFORE
+      // the first load so switches during loading also repaint.
+      if (window.I18N && typeof I18N.onChange === "function") {
+        I18N.onChange(() => { renderDocuments(); renderMembers(); });
+      }
+
       let project;
       try {
         project = await apiGet(`/api/projects/${projectId}`);
-        document.getElementById("project-title").textContent = project.name;
+        const titleEl = document.getElementById("project-title");
+        titleEl.textContent = project.name;
+        // Drop the data-i18n hook so later apply()/setLang() sweeps don't
+        // overwrite the real project name with the "loading" placeholder.
+        titleEl.removeAttribute("data-i18n");
         document.title = `${BRAND.nameJa} — ${project.name}`;
       } catch (e) {
-        document.getElementById("project-title").textContent = "プロジェクトが見つかりません";
+        document.getElementById("project-title").textContent = tOr("project.error.notFound");
         return;
       }
 
@@ -113,38 +128,80 @@
 
     // ---------- documents ----------
 
-    async function loadDocuments() {
+    function renderDocuments() {
       const el = document.getElementById("doc-list");
+      // Build via DOM APIs with textContent only (no innerHTML — XSS policy).
+      el.textContent = "";
+      if (docsError !== null) {
+        // Server messages are not translatable keys: show as-is.
+        const err = document.createElement("div");
+        err.className = "empty";
+        err.textContent = docsError;
+        el.appendChild(err);
+        return;
+      }
+      if (!docsCache) return; // not loaded yet: keep the loading placeholder
+      if (!docsCache.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = tOr("project.docs.empty");
+        el.appendChild(empty);
+        return;
+      }
+      docGroups.forEach((g, i) => {
+        const latest = g.versions[0];
+        const a = document.createElement("a");
+        a.className = "list-item";
+        a.href = `viewer.html?doc=${latest.id}`;
+        const main = document.createElement("div");
+        main.className = "item-main";
+        const title = document.createElement("div");
+        title.className = "item-title";
+        title.textContent = g.filename;
+        const sub = document.createElement("div");
+        sub.className = "item-sub";
+        sub.textContent = tOr("project.docs.lastUpdated", { date: fmtDate(latest.uploaded_at) });
+        main.append(title, sub);
+        const side = document.createElement("div");
+        side.className = "item-side";
+        const vBadge = document.createElement("span");
+        vBadge.className = "badge badge-shu";
+        vBadge.textContent = `v${latest.version}`;
+        const nBadge = document.createElement("span");
+        nBadge.className = "badge";
+        nBadge.textContent = tOr(g.versions.length > 1 ? "project.docs.versions" : "project.docs.version", { count: g.versions.length });
+        const dlBtn = document.createElement("button");
+        dlBtn.className = "btn btn-ghost btn-sm";
+        dlBtn.textContent = tOr("project.docs.download");
+        dlBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); downloadDoc(i); });
+        side.append(vBadge, nBadge, dlBtn);
+        if (canManage) {
+          const delBtn = document.createElement("button");
+          delBtn.className = "btn btn-ghost btn-sm";
+          delBtn.textContent = tOr("project.docs.delete");
+          delBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); deleteDocGroup(i); });
+          side.appendChild(delBtn);
+        }
+        a.append(main, side);
+        el.appendChild(a);
+      });
+    }
+
+    async function loadDocuments() {
       try {
         const docs = await apiGet(`/api/projects/${projectId}/documents`);
-        if (!docs.length) {
-          el.innerHTML = `<div class="empty">ドキュメントはまだありません。 / No documents yet.</div>`;
-          return;
-        }
         // group by filename → show latest version, link to viewer
         const groups = {};
         for (const d of docs) (groups[d.filename] ??= []).push(d);
         docGroups = Object.entries(groups).map(([filename, versions]) => ({ filename, versions }));
-
-        el.innerHTML = docGroups.map((g, i) => {
-          const latest = g.versions[0];
-          return `
-            <a class="list-item" href="viewer.html?doc=${latest.id}">
-              <div class="item-main">
-                <div class="item-title">${escapeHtml(g.filename)}</div>
-                <div class="item-sub">最終更新 ${fmtDate(latest.uploaded_at)}</div>
-              </div>
-              <div class="item-side">
-                <span class="badge badge-shu">v${latest.version}</span>
-                <span class="badge">${g.versions.length} version${g.versions.length > 1 ? "s" : ""}</span>
-                <button class="btn btn-ghost btn-sm" onclick="event.preventDefault(); event.stopPropagation(); downloadDoc(${i})">⬇ ダウンロード / Download</button>
-                ${canManage ? `<button class="btn btn-ghost btn-sm" onclick="event.preventDefault(); event.stopPropagation(); deleteDocGroup(${i})">削除 / Delete</button>` : ""}
-              </div>
-            </a>`;
-        }).join("");
+        docsError = null;
+        docsCache = docs;
       } catch (e) {
-        el.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+        docsError = (e && e.message) || "";
+        docsCache = null;
+        docGroups = [];
       }
+      renderDocuments();
     }
 
     async function downloadDoc(i) {
@@ -164,21 +221,21 @@
         a.remove();
         URL.revokeObjectURL(url);
       } catch (e) {
-        toast(`ダウンロード失敗: ${e.message}`, true);
+        toast(`${tOr("project.error.download")}: ${e.message}`, true);
       }
     }
 
     function updateFileNames() {
       const files = document.getElementById("file-input").files;
       const el = document.getElementById("file-names");
-      if (!files.length) el.textContent = "未選択 / No file selected";
+      if (!files.length) el.textContent = tOr("project.noFile");
       else if (files.length === 1) el.textContent = files[0].name;
-      else el.textContent = `${files.length} 件のファイル / ${files.length} files`;
+      else el.textContent = tOr("project.filesCount", { count: files.length });
     }
 
     async function uploadSelected() {
       const input = document.getElementById("file-input");
-      if (!input.files.length) { toast("ファイルを選択してください", true); return; }
+      if (!input.files.length) { toast(tOr("project.error.noFile"), true); return; }
       await uploadFiles(input.files);
       input.value = "";
       updateFileNames();
@@ -202,7 +259,7 @@
           }
         }
         if (fileList.length > 1) {
-          toast(`完了: ${ok}件成功${fail ? ` / ${fail}件失敗` : ""}`, fail > 0);
+          toast(fail > 0 ? tOr("project.upload.doneFail", { ok, fail }) : tOr("project.upload.done", { count: ok }), fail > 0);
         }
         await loadDocuments();
       } finally {
@@ -231,9 +288,9 @@
       if (!g) return;
       const n = g.versions.length;
       const ok = await appConfirm({
-        title: "ドキュメントを削除 / Delete document",
-        message: `「${g.filename}」を削除しますか？\n全 ${n} バージョンと、付いているコメントもすべて削除されます。`,
-        okLabel: "削除する / Delete",
+        title: tOr("project.confirm.deleteDoc"),
+        message: tOr("project.confirm.deleteDocMsg", { name: g.filename, count: n }),
+        okLabel: tOr("project.confirm.deleteOk"),
         danger: true,
       });
       if (!ok) return;
@@ -242,52 +299,105 @@
         try { await apiDelete(`/api/documents/${v.id}`); }
         catch (e) { fail++; }
       }
-      toast(fail ? `一部削除に失敗しました (${fail}/${n})` : `「${g.filename}」を削除しました`, fail > 0);
+      toast(fail ? tOr("project.toast.deletePartial", { fail, count: n }) : tOr("project.toast.deleted", { name: g.filename }), fail > 0);
       await loadDocuments();
     }
 
     // ---------- members ----------
 
     async function loadMembers() {
-      const el = document.getElementById("member-list");
       try {
-        const members = await apiGet(`/api/projects/${projectId}/members`);
-        if (!members.length) {
-          el.innerHTML = `<div class="empty">クライアントメンバーはまだいません。</div>`;
-          return;
-        }
-        el.innerHTML = members.map(m => `
-          <div class="list-item">
-            <div class="item-main">
-              <div class="item-title">${escapeHtml(m.display_name || "—")}</div>
-              <div class="item-sub">${escapeHtml(m.email || "")}</div>
-            </div>
-            <div class="item-side">
-              <span class="badge badge-ai">${ROLE_LABEL[m.member_role] || m.member_role}</span>
-              ${m.account_role === "client" && m.user_id !== currentProfile.id ? `<button class="btn btn-ghost btn-sm" onclick="resetPassword('${m.user_id}', '${escapeHtml(m.email)}')">PWリセット</button>` : ""}
-              ${m.user_id !== currentProfile.id ? `<button class="btn btn-ghost btn-sm" onclick="removeMember('${m.user_id}')">削除 / Remove</button>` : `<span class="badge">あなた / You</span>`}
-            </div>
-          </div>`).join("");
+        membersCache = await apiGet(`/api/projects/${projectId}/members`);
+        membersError = null;
       } catch (e) {
-        el.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+        membersCache = null;
+        membersError = (e && e.message) || "";
       }
+      renderMembers();
+    }
+
+    // Build the member list from cache via DOM APIs + textContent only
+    // (no innerHTML — XSS policy). Rebuilt on every I18N.onChange repaint.
+    function renderMembers() {
+      const el = document.getElementById("member-list");
+      if (!el) return;
+      el.textContent = "";
+      if (membersError !== null) {
+        // Server messages are not translatable keys: show as-is.
+        const err = document.createElement("div");
+        err.className = "empty";
+        err.textContent = membersError;
+        el.appendChild(err);
+        return;
+      }
+      if (!membersCache) return; // not loaded yet
+      if (!membersCache.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = tOr("project.members.empty");
+        el.appendChild(empty);
+        return;
+      }
+      membersCache.forEach((m) => {
+        const item = document.createElement("div");
+        item.className = "list-item";
+        const main = document.createElement("div");
+        main.className = "item-main";
+        const name = document.createElement("div");
+        name.className = "item-title";
+        name.textContent = m.display_name || "—";
+        const sub = document.createElement("div");
+        sub.className = "item-sub";
+        sub.textContent = m.email || "";
+        main.append(name, sub);
+        const side = document.createElement("div");
+        side.className = "item-side";
+        const role = document.createElement("span");
+        role.className = "badge badge-ai";
+        // Role label via t(); unknown roles fall back to the raw value.
+        const roleKey = "project.role." + m.member_role;
+        role.textContent = tOr(roleKey) !== roleKey ? tOr(roleKey) : m.member_role;
+        side.appendChild(role);
+        if (m.account_role === "client" && m.user_id !== currentProfile.id) {
+          const resetBtn = document.createElement("button");
+          resetBtn.className = "btn btn-ghost btn-sm";
+          resetBtn.textContent = tOr("project.pwreset");
+          // Event delegation via closure — no email/userId embedded in inline onclick (XSS).
+          resetBtn.addEventListener("click", () => resetPassword(m.user_id, m.email));
+          side.appendChild(resetBtn);
+        }
+        if (m.user_id !== currentProfile.id) {
+          const removeBtn = document.createElement("button");
+          removeBtn.className = "btn btn-ghost btn-sm";
+          removeBtn.textContent = tOr("project.remove");
+          removeBtn.addEventListener("click", () => removeMember(m.user_id));
+          side.appendChild(removeBtn);
+        } else {
+          const youBadge = document.createElement("span");
+          youBadge.className = "badge";
+          youBadge.textContent = tOr("project.you");
+          side.appendChild(youBadge);
+        }
+        item.append(main, side);
+        el.appendChild(item);
+      });
     }
 
     async function inviteMember() {
       const email = document.getElementById("member-email").value.trim().toLowerCase();
       const display_name = document.getElementById("member-name").value.trim();
       const member_role = document.getElementById("member-role").value;
-      if (!email) { toast("メールアドレスを入力してください", true); return; }
+      if (!email) { toast(tOr("project.error.emailRequired"), true); return; }
       try {
         const res = await apiPost(`/api/projects/${projectId}/members/invite`, { email, display_name, member_role });
         document.getElementById("member-email").value = "";
         document.getElementById("member-name").value = "";
         if (res.created && res.password) {
-          showPassword(`${res.email} のアカウントを作成しました`, res.password);
-          toast("アカウントを作成し、メンバーに追加しました");
+          showPassword(tOr("project.pw.created", { email: res.email }), res.password);
+          toast(tOr("project.toast.memberAdded"));
         } else {
           hidePassword();
-          toast("既存アカウントをメンバーに追加しました");
+          toast(tOr("project.toast.existing"));
         }
         await loadMembers();
       } catch (e) {
@@ -304,22 +414,22 @@
 
     async function copyPassword() {
       const pw = document.getElementById("pw-value").textContent;
-      try { await navigator.clipboard.writeText(pw); toast("コピーしました"); }
-      catch (e) { toast("コピーできませんでした — 手動で選択してください", true); }
+      try { await navigator.clipboard.writeText(pw); toast(tOr("project.toast.copied")); }
+      catch (e) { toast(tOr("project.toast.copyFailed"), true); }
     }
 
     async function resetPassword(userId, email) {
       const ok2 = await appConfirm({
-        title: "パスワードをリセット / Reset password",
-        message: `${email} のパスワードをリセットしますか？\n既存のログインセッションはすべて無効になります。`,
-        okLabel: "リセットする / Reset",
+        title: tOr("project.confirm.resetPw"),
+        message: tOr("project.confirm.resetPwMsg", { email }),
+        okLabel: tOr("project.confirm.resetOk"),
         danger: true,
       });
       if (!ok2) return;
       try {
         const res = await apiPost(`/api/projects/${projectId}/members/${userId}/reset-password`);
-        showPassword(`${res.email} の新しいパスワード`, res.password);
-        toast("パスワードをリセットしました");
+        showPassword(tOr("project.pw.newPw", { email: res.email }), res.password);
+        toast(tOr("project.toast.pwReset"));
       } catch (e) {
         toast(e.message, true);
       }
@@ -327,18 +437,18 @@
 
     async function removeMember(userId) {
       const ok = await appConfirm({
-        title: "メンバーを削除 / Remove member",
-        message: "このメンバーをプロジェクトから削除しますか？",
-        okLabel: "削除する / Remove",
+        title: tOr("project.confirm.removeMember"),
+        message: tOr("project.confirm.removeMemberMsg"),
+        okLabel: tOr("project.confirm.removeOk"),
         danger: true,
       });
       if (!ok) return;
       try {
         await apiDelete(`/api/projects/${projectId}/members/${userId}`);
-        toast("メンバーを削除しました");
+        toast(tOr("project.toast.memberRemoved"));
         await loadMembers();
       } catch (e) {
-        toast("削除失敗: " + e.message, true);
+        toast(tOr("project.toast.removeFailed", { message: e.message }), true);
       }
     }
 

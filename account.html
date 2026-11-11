@@ -11,40 +11,46 @@
   <header id="app-header"></header>
 
   <main class="container" style="max-width:560px;">
-    <div class="eyebrow">Account</div>
-    <h1 class="page-title">アカウント設定</h1>
+    <div class="eyebrow" data-i18n="account.eyebrow"></div>
+    <h1 class="page-title" data-i18n="account.title"></h1>
 
     <div class="card" style="margin-bottom:20px;">
-      <div class="item-sub" style="margin-bottom:4px;">ログイン中 / Signed in as</div>
+      <div class="item-sub" style="margin-bottom:4px;" data-i18n="account.signedInAs"></div>
       <div class="item-title" id="acc-name">—</div>
       <div class="item-sub" id="acc-email"></div>
     </div>
 
-    <h2 class="section-title">パスワード変更 / Change password</h2>
+    <h2 class="section-title" data-i18n="account.section.changePassword"></h2>
     <div class="card">
       <div class="field">
-        <label for="pw-current">現在のパスワード / Current password</label>
+        <label for="pw-current" data-i18n="account.label.currentPassword"></label>
         <input type="password" id="pw-current" autocomplete="current-password">
       </div>
       <div class="field">
-        <label for="pw-new">新しいパスワード / New password (8文字以上)</label>
+        <label for="pw-new" data-i18n="account.label.newPassword"></label>
         <input type="password" id="pw-new" autocomplete="new-password">
       </div>
       <div class="field">
-        <label for="pw-confirm">新しいパスワード(確認) / Confirm</label>
+        <label for="pw-confirm" data-i18n="account.label.confirmPassword"></label>
         <input type="password" id="pw-confirm" autocomplete="new-password">
       </div>
-      <button class="btn" id="pw-btn" onclick="changePassword()">変更する / Change</button>
-      <p style="font-size:12px; color:var(--ink-soft); margin-top:10px;">
-        変更すると他の端末のログインはすべて無効になります。
+      <button class="btn" id="pw-btn" onclick="changePassword()" data-i18n="account.submit.change"></button>
+      <p style="font-size:12px; color:var(--ink-soft); margin-top:10px;" data-i18n="account.note.sessions">
       </p>
     </div>
   </main>
 
+  <script src="js/i18n.js"></script>
   <script src="js/brand.js"></script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
   <script>
+    // i18n availability guard (same spirit as index.html): if js/i18n.js failed
+    // to load (404 etc.), fall back to the key string instead of ReferenceError.
+    function tOr(key) {
+      return (window.I18N && typeof I18N.t === "function") ? I18N.t(key) : key;
+    }
+
     async function init() {
       const profile = await requireAuth();
       if (!profile) return;
@@ -57,15 +63,17 @@
       const current_password = document.getElementById("pw-current").value;
       const new_password = document.getElementById("pw-new").value;
       const confirm = document.getElementById("pw-confirm").value;
-      if (new_password !== confirm) { toast("確認用パスワードが一致しません", true); return; }
+      if (new_password !== confirm) { toast(tOr("account.error.mismatch"), true); return; }
       const btn = document.getElementById("pw-btn");
       btn.disabled = true;
       try {
         await apiPost("/api/auth/change-password", { current_password, new_password });
         ["pw-current","pw-new","pw-confirm"].forEach(id => document.getElementById(id).value = "");
-        toast("パスワードを変更しました");
+        toast(tOr("account.toast.changed"));
       } catch (e) {
-        toast(e.message, true);
+        // Server message is not a translatable key: show as-is (fallback text
+        // when the server gave none).
+        toast((e && e.message) || tOr("account.error.generic"), true);
       } finally {
         btn.disabled = false;
       }

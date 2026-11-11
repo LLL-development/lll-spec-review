@@ -69,8 +69,13 @@
         </div>
       </div>
 
-      <label class="show-resolved">
-        <input type="checkbox" id="show-resolved" onchange="renderThreads()"> 解決済みも表示 / Show resolved
+      <label class="resolved-filter">
+        解決済みフィルタ / Resolved filter
+        <select id="resolved-filter" onchange="onFilterChange()">
+          <option value="all" selected>すべて / All</option>
+          <option value="unresolved">未解決 / Unresolved</option>
+          <option value="resolved">解決済み / Resolved</option>
+        </select>
       </label>
 
       <div id="threads" class="threads">
@@ -80,6 +85,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+  <script src="js/i18n.js"></script>
   <script src="js/brand.js"></script>
   <script src="js/diff.js"></script>
   <script src="js/api.js"></script>
@@ -233,10 +239,22 @@
       if (m.t === "open") focusThread(m.id);
     }
 
+    function passesResolvedFilter(c) {
+      const v = document.getElementById("resolved-filter").value; // all|unresolved|resolved
+      if (v === "unresolved") return !c.resolved;
+      if (v === "resolved") return !!c.resolved;
+      return true; // all
+    }
+
+    function onFilterChange() {
+      renderThreads();
+      sendState();
+    }
+
     function sendState() {
       if (!frameReady) return;
       const pins = topLevel()
-        .filter(c => c.anchor)
+        .filter(c => c.anchor && passesResolvedFilter(c))
         .map(c => ({ id: c.id, n: numberOf(c.id), resolved: !!c.resolved, anchor: c.anchor }));
       if (draftAnchor) pins.push({ id: "draft", draft: true, anchor: draftAnchor });
       frame().contentWindow.postMessage({ ns: "lllsr-host", t: "state", mode, pins }, "*");
@@ -298,8 +316,7 @@
 
     function renderThreads() {
       const el = document.getElementById("threads");
-      const showResolved = document.getElementById("show-resolved").checked;
-      const items = topLevel().filter(c => showResolved || !c.resolved);
+      const items = topLevel().filter(passesResolvedFilter);
       document.getElementById("comment-count").textContent =
         topLevel().filter(c => !c.resolved).length;
 
@@ -418,8 +435,12 @@
 
     function focusThread(id) {
       openPanelIfMobile();
-      document.getElementById("show-resolved").checked = true;
+      const t = comments.find(x => x.id === id);
+      if (t && !passesResolvedFilter(t)) {
+        document.getElementById("resolved-filter").value = "all";
+      }
       renderThreads();
+      sendState();
       const el = document.getElementById(`thread-${id}`);
       if (el) {
         el.scrollIntoView({ block: "center", behavior: "smooth" });
