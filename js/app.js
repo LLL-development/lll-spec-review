@@ -25,22 +25,45 @@ async function signOut() {
 }
 
 // Render the shared header into #app-header
+let _headerLangBound = false; // register I18N.onChange only once across re-renders
 function renderHeader() {
   const el = document.getElementById("app-header");
   if (!el) return;
   const name = currentProfile ? escapeHtml(currentProfile.display_name || currentProfile.email) : "";
   // Only staff accounts get a role tag — regular users just see their name
   const roleTag = isInternal() ? `<span class="user-role">LLL Staff</span>` : "";
+  // Language toggle (JA/EN). Brand/title stay Japanese; only UI text switches.
+  const langToggle = `
+      <span class="lang-toggle">
+        <button type="button" data-lang="ja" onclick="I18N.setLang('ja')">JA</button><button type="button" data-lang="en" onclick="I18N.setLang('en')">EN</button>
+      </span>`;
   el.innerHTML = `
     <a class="brand" href="dashboard.html">
       <span class="hanko">${escapeHtml(BRAND.mark)}</span>
       <span class="brand-text"><strong>${escapeHtml(BRAND.nameJa)}</strong><small>${escapeHtml(BRAND.nameEn)} — ${escapeHtml(BRAND.tagline)}</small></span>
     </a>
-    <div class="header-user">
+    <div class="header-user">${langToggle}
       <span class="user-chip"><span class="user-name">${name}</span>${roleTag}</span>
-      <a class="btn btn-ghost btn-sm" href="account.html">アカウント</a>
-      <button class="btn btn-ghost btn-sm" onclick="signOut()">ログアウト / Sign out</button>
+      <a class="btn btn-ghost btn-sm" href="account.html" data-i18n="header.account">アカウント</a>
+      <button class="btn btn-ghost btn-sm" onclick="signOut()" data-i18n="header.signout">ログアウト</button>
     </div>`;
+  // Guard: header must not break if i18n.js failed to load (404 etc.).
+  if (window.I18N && typeof window.I18N.getLang === "function") {
+    // Translate the header's [data-i18n] buttons now (renderHeader runs after
+    // i18n's initial apply(), so re-apply scoped to this header only).
+    if (typeof window.I18N.apply === "function") window.I18N.apply(el);
+    const updateLangButtons = () => {
+      const cur = window.I18N.getLang();
+      document.querySelectorAll("#app-header .lang-toggle button").forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-lang") === cur);
+      });
+    };
+    updateLangButtons();
+    if (!_headerLangBound && typeof window.I18N.onChange === "function") {
+      window.I18N.onChange(updateLangButtons); // callback re-looks-up DOM each time: safe across re-renders
+      _headerLangBound = true;
+    }
+  }
 }
 
 // ---------- utilities ----------

@@ -233,6 +233,22 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
 
 .auth-error { color: var(--shu); font-size: 13px; margin-top: 12px; min-height: 1.2em; }
 
+/* ---------- language toggle (JA/EN pill-in-pill) ---------- */
+/* Outer pill matches .btn-ghost colors (transparent bg, 1px --line border).
+   Inner active pill follows the .auth-toggle button.active convention (--ai fill). */
+.lang-toggle {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px; border: 1px solid var(--line); border-radius: 99px;
+  background: transparent; flex: 0 0 auto;
+}
+.lang-toggle button {
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--ink-soft); font-size: 12px; line-height: 1; padding: 5px 10px;
+  border-radius: 99px; letter-spacing: .03em; transition: background .15s, color .15s;
+}
+.lang-toggle button:hover { background: rgba(38,36,31,.05); color: var(--ink); }
+.lang-toggle button.active { background: var(--ai); color: #F6F4EE; }
+
 /* ---------- viewer ---------- */
 
 .viewer-body { display: flex; flex-direction: column; height: 100dvh; }
@@ -340,11 +356,11 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
 .panel-head { display: flex; align-items: center; justify-content: space-between; }
 .panel-close { display: none; }
 
-.show-resolved {
+.resolved-filter {
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; color: var(--ink-soft); margin: 0; cursor: pointer;
 }
-.show-resolved input { accent-color: var(--ai); }
+.resolved-filter select { width: auto; padding: 5px 9px; font-size: 13px; }
 
 .threads { display: flex; flex-direction: column; gap: 10px; }
 

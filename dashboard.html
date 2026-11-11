@@ -11,73 +11,148 @@
   <header id="app-header"></header>
 
   <main class="container">
-    <div class="eyebrow">Projects</div>
-    <h1 class="page-title">プロジェクト一覧</h1>
+    <div class="eyebrow" data-i18n="dashboard.eyebrow"></div>
+    <h1 class="page-title" data-i18n="dashboard.title"></h1>
 
     <div class="card" id="create-card" style="display:none; margin-bottom:28px;">
       <div class="form-row">
         <div class="field">
-          <label for="new-name">プロジェクト名 / Project name</label>
-          <input type="text" id="new-name" placeholder="例: まいぷれ仕様書">
+          <label for="new-name" data-i18n="dashboard.label.projectName"></label>
+          <input type="text" id="new-name" data-i18n-placeholder="dashboard.placeholder.projectName">
         </div>
         <div class="field">
-          <label for="new-client">クライアント名 / Client</label>
-          <input type="text" id="new-client" placeholder="例: 〇〇株式会社">
+          <label for="new-client" data-i18n="dashboard.label.client"></label>
+          <input type="text" id="new-client" data-i18n-placeholder="dashboard.placeholder.client">
         </div>
-        <button class="btn btn-shu" onclick="createProject()">作成 / Create</button>
+        <button class="btn btn-shu" id="create-btn" onclick="createProject()" data-i18n="dashboard.submit.create"></button>
       </div>
     </div>
 
     <div class="list" id="project-list">
-      <div class="empty">読み込み中… / Loading…</div>
+      <div class="empty" data-i18n="dashboard.loading"></div>
     </div>
   </main>
 
+  <script src="js/i18n.js"></script>
   <script src="js/brand.js"></script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
   <script>
+    // i18n availability guard (same spirit as index.html): if js/i18n.js failed
+    // to load (404 etc.), fall back to the key string instead of ReferenceError.
+    function tOr(key) {
+      return (window.I18N && typeof I18N.t === "function") ? I18N.t(key) : key;
+    }
+
     async function init() {
       const profile = await requireAuth();
       if (!profile) return;
       renderHeader();
       document.getElementById("create-card").style.display = "";
+      // Re-render the list on language switch: dynamic nodes (badge, empty
+      // state, error text) are built with textContent and are NOT covered by
+      // apply()'s [data-i18n*] sweep. Skip re-fetch: translate from cache.
+      // Subscribe BEFORE the first load so switches during loading also repaint.
+      if (window.I18N && typeof I18N.onChange === "function") {
+        I18N.onChange(() => {
+          if (loadError !== null) renderLoadError();
+          else if (projectsCache) renderProjectList(projectsCache);
+        });
+      }
       await loadProjects();
     }
 
-    async function loadProjects() {
+    let projectsCache = null; // last successful /api/projects payload
+    let loadError = null;     // server message when the last load failed ("" allowed)
+    let loadSeq = 0;          // response-order token: stale responses are dropped
+
+    function renderProjectList(projects) {
       const listEl = document.getElementById("project-list");
+      // Build via DOM APIs with textContent only (no innerHTML — XSS policy).
+      listEl.textContent = "";
+      if (!projects.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.appendChild(document.createTextNode(tOr("dashboard.empty")));
+        empty.appendChild(document.createElement("br"));
+        empty.appendChild(document.createTextNode(tOr("dashboard.emptyCta")));
+        listEl.appendChild(empty);
+        return;
+      }
+      projects.forEach(p => {
+        const a = document.createElement("a");
+        a.className = "list-item";
+        a.href = `project.html?id=${encodeURIComponent(p.id)}`;
+        const main = document.createElement("div");
+        main.className = "item-main";
+        const title = document.createElement("div");
+        title.className = "item-title";
+        title.textContent = p.name;
+        const sub = document.createElement("div");
+        sub.className = "item-sub";
+        sub.textContent = `${p.client_name || "—"} ・ ${fmtDate(p.created_at)}`;
+        main.append(title, sub);
+        const side = document.createElement("div");
+        side.className = "item-side";
+        const badge = document.createElement("span");
+        badge.className = "badge badge-ai";
+        badge.textContent = tOr("dashboard.open");
+        side.appendChild(badge);
+        a.append(main, side);
+        listEl.appendChild(a);
+      });
+    }
+
+    function renderLoadError() {
+      // Server messages are not translatable keys: show as-is. Re-callable so
+      // language switches re-translate the prefix while keeping the message.
+      const listEl = document.getElementById("project-list");
+      listEl.textContent = "";
+      const err = document.createElement("div");
+      err.className = "empty";
+      err.textContent = `${tOr("dashboard.error.load")} ${loadError}`.trim();
+      listEl.appendChild(err);
+    }
+
+    async function loadProjects() {
+      const my = ++loadSeq; // order token: only the newest response may paint
       try {
         const projects = await apiGet("/api/projects");
-        if (!projects.length) {
-          listEl.innerHTML = `<div class="empty">プロジェクトがまだありません。上のフォームから作成できます。<br>Create your first project above.</div>`;
-          return;
+        if (my !== loadSeq) return;
+        // Guard against malformed payloads (null entries, missing id, etc.).
+        if (!Array.isArray(projects) || projects.some(p => !p || typeof p !== "object" || p.id == null)) {
+          throw new Error((projects && projects.error) || "");
         }
-        listEl.innerHTML = projects.map(p => `
-          <a class="list-item" href="project.html?id=${p.id}">
-            <div class="item-main">
-              <div class="item-title">${escapeHtml(p.name)}</div>
-              <div class="item-sub">${escapeHtml(p.client_name || "—")} ・ ${fmtDate(p.created_at)}</div>
-            </div>
-            <div class="item-side"><span class="badge badge-ai">開く / Open</span></div>
-          </a>`).join("");
+        loadError = null;
+        projectsCache = projects;
+        renderProjectList(projects);
       } catch (e) {
-        listEl.innerHTML = `<div class="empty">読み込みに失敗しました: ${escapeHtml(e.message)}</div>`;
+        if (my !== loadSeq) return;
+        // api.js always rejects with an Error, but stay defensive.
+        loadError = (e && e.message) || "";
+        projectsCache = null;
+        renderLoadError();
       }
     }
 
     async function createProject() {
       const name = document.getElementById("new-name").value.trim();
       const client_name = document.getElementById("new-client").value.trim();
-      if (!name) { toast("プロジェクト名を入力してください", true); return; }
+      if (!name) { toast(tOr("dashboard.error.nameRequired"), true); return; }
+      // Double-submit guard (same pattern as account.html pw-btn).
+      const btn = document.getElementById("create-btn");
+      if (btn) btn.disabled = true;
       try {
         await apiPost("/api/projects", { name, client_name });
         document.getElementById("new-name").value = "";
         document.getElementById("new-client").value = "";
-        toast("プロジェクトを作成しました");
+        toast(tOr("dashboard.toast.created"));
         await loadProjects();
       } catch (e) {
-        toast("作成に失敗しました: " + e.message, true);
+        // Server message is not a translatable key: append as-is.
+        toast(`${tOr("dashboard.error.create")} ${(e && e.message) || ""}`.trim(), true);
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 

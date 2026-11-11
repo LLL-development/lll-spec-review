@@ -6,6 +6,16 @@
   <title>__BRAND__ — ログイン</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/style.css">
+  <script>
+    // Set <html lang> before first paint (FOUC guard). Sync inline: no CSP here.
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem("lang"); } catch (e) {}
+      document.documentElement.lang =
+        (saved === "ja" || saved === "en") ? saved
+        : (navigator.language && navigator.language.startsWith("ja") ? "ja" : "en");
+    })();
+  </script>
 </head>
 <body>
   <div class="login-wrap">
@@ -16,48 +26,70 @@
         <p data-brand="taglineLong"></p>
       </div>
 
+      <div class="lang-toggle" style="display:flex; justify-content:flex-end; margin-bottom:8px">
+        <button id="lang-ja" type="button" data-lang="ja" onclick="switchLang('ja')">JA</button><button id="lang-en" type="button" data-lang="en" onclick="switchLang('en')">EN</button>
+      </div>
+
       <div class="auth-toggle">
-        <button id="tab-signin" class="active" onclick="setMode('signin')">ログイン / Sign in</button>
-        <button id="tab-signup" onclick="setMode('signup')">新規登録 / Sign up</button>
+        <button id="tab-signin" class="active" onclick="setMode('signin')" data-i18n="index.tab.signin"></button>
+        <button id="tab-signup" onclick="setMode('signup')" data-i18n="index.tab.signup"></button>
       </div>
 
       <div class="field" id="field-name" style="display:none">
-        <label for="display-name">表示名 / Display name</label>
-        <input type="text" id="display-name" autocomplete="name" placeholder="山田 太郎">
+        <label for="display-name" data-i18n="index.label.displayName"></label>
+        <input type="text" id="display-name" autocomplete="name" data-i18n-placeholder="index.placeholder.displayName">
       </div>
       <div class="field">
-        <label for="email">メールアドレス / Email</label>
+        <label for="email" data-i18n="index.label.email"></label>
         <input type="email" id="email" autocomplete="email" placeholder="you@example.com">
       </div>
       <div class="field">
-        <label for="password">パスワード / Password</label>
-        <input type="password" id="password" autocomplete="current-password" placeholder="8文字以上">
+        <label for="password" data-i18n="index.label.password"></label>
+        <input type="password" id="password" autocomplete="current-password" data-i18n-placeholder="index.placeholder.password">
       </div>
 
-      <button class="btn" id="submit-btn" style="width:100%" onclick="submit()">ログイン / Sign in</button>
+      <button class="btn" id="submit-btn" style="width:100%" onclick="submit()" data-i18n="index.submit.signin"></button>
 
-      <div class="auth-divider" id="google-divider" hidden><span>または / or</span></div>
+      <div class="auth-divider" id="google-divider" hidden><span data-i18n="index.or"></span></div>
       <button class="btn btn-ghost btn-google" id="google-btn" hidden onclick="location.href='/api/auth/google'">
         <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.6 2.4 30.1 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.3 13.4 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.4 28.7a14.5 14.5 0 0 1 0-9.4l-7.8-6.1a24 24 0 0 0 0 21.6l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.1 0 11.6-2 15.4-5.5l-7.5-5.8c-2.1 1.4-4.8 2.3-7.9 2.3-6.3 0-11.7-3.9-13.6-9.3l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/></svg>
-        Googleでログイン / Sign in with Google
+        <span data-i18n="index.google"></span>
       </button>
       <div class="auth-error" id="auth-error"></div>
     </div>
   </div>
 
+  <script src="js/i18n.js"></script>
   <script src="js/brand.js"></script>
   <script src="js/api.js"></script>
   <script>
     let mode = "signin";
+
+    // ---- i18n availability guard (Low-6) ----
+    // If js/i18n.js failed to load (404 etc.), keep login working with the
+    // static Japanese markup instead of dying on ReferenceError.
+    const HAS_I18N = typeof window.I18N !== "undefined" && typeof window.I18N.setLang === "function";
+    function showAuthError(el, key) {
+      if (HAS_I18N) I18N.showError(el, key);
+      else el.textContent = "";
+    }
+    function clearAuthError() {
+      if (HAS_I18N) I18N.clearError(document.getElementById("auth-error"));
+      else document.getElementById("auth-error").textContent = "";
+    }
 
     function setMode(m) {
       mode = m;
       document.getElementById("tab-signin").classList.toggle("active", m === "signin");
       document.getElementById("tab-signup").classList.toggle("active", m === "signup");
       document.getElementById("field-name").style.display = m === "signup" ? "" : "none";
-      document.getElementById("submit-btn").textContent =
-        m === "signup" ? "登録する / Create account" : "ログイン / Sign in";
-      document.getElementById("auth-error").textContent = "";
+      // Switch the data-i18n ATTRIBUTE itself (not just textContent) so later
+      // apply()/setLang() re-translations keep the correct mode's label.
+      const btn = document.getElementById("submit-btn");
+      const key = m === "signup" ? "index.submit.signup" : "index.submit.signin";
+      btn.setAttribute("data-i18n", key);
+      btn.textContent = I18N.t(key);
+      clearAuthError();
     }
 
     async function submit() {
@@ -66,9 +98,10 @@
       const email = document.getElementById("email").value.trim();
       const password = document.getElementById("password").value;
       errEl.textContent = "";
+      delete errEl.dataset.i18nError;
 
       if (!email || !password) {
-        errEl.textContent = "メールアドレスとパスワードを入力してください。";
+        showAuthError(errEl, "index.error.required");
         return;
       }
 
@@ -82,7 +115,10 @@
         }
         location.href = "dashboard.html";
       } catch (e) {
-        errEl.textContent = e.message || "エラーが発生しました。";
+        // Server messages are not translatable keys: show as-is (no dataset key,
+        // so language switches leave it untouched rather than re-translating).
+        errEl.textContent = e.message || (HAS_I18N ? I18N.t("index.error.generic") : "");
+        delete errEl.dataset.i18nError;
       } finally {
         btn.disabled = false;
       }
@@ -103,14 +139,30 @@
     // Surface OAuth errors passed back via ?error=
     const err = new URLSearchParams(location.search).get("error");
     if (err === "google") {
-      document.getElementById("auth-error").textContent = "Googleログインに失敗しました。もう一度お試しください。";
+      showAuthError(document.getElementById("auth-error"), "index.error.google");
     } else if (err === "google_unconfigured") {
-      document.getElementById("auth-error").textContent = "Googleログインは未設定です。";
+      showAuthError(document.getElementById("auth-error"), "index.error.googleUnconfigured");
     }
 
     // Already signed in? Skip to dashboard.
     fetch("/api/auth/me", { credentials: "same-origin" })
       .then(r => { if (r.ok) location.href = "dashboard.html"; });
+
+    // ---- language toggle (JA / EN) ----
+    function updateLangButtons() {
+      if (!HAS_I18N) return;
+      const cur = I18N.getLang();
+      document.getElementById("lang-ja").classList.toggle("active", cur === "ja");
+      document.getElementById("lang-en").classList.toggle("active", cur === "en");
+    }
+    function switchLang(lang) {
+      if (!HAS_I18N) return;
+      I18N.setLang(lang); // fires onChange subscribers (incl. updateLangButtons)
+    }
+    // Subscribe via the i18n onChange hook — no setLang wrapper overriding,
+    // so other pages get the same behavior by subscribing too (Medium-5).
+    if (HAS_I18N) I18N.onChange(updateLangButtons);
+    document.addEventListener("DOMContentLoaded", updateLangButtons);
   </script>
 </body>
 </html>
