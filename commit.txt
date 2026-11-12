@@ -1,8 +1,13 @@
-fix: bump GitHub Actions Node to 22 (wrangler requires >=22)
+feat(release): v1.2.4 — folder upload & higher file limit
 
-Wrangler's latest release requires Node.js >= 22; the deploy workflow
-pinned Node 20 (inherited from the archquest reference), causing the
-"Apply database migrations" step to fail. Bumped setup-node to 22.
+feat: upload a folder directly — pick or drop a folder and the browser
+packs it into a zip on the spot (js/zipstore.js, uncompressed zip with
+CRC-32), reusing the existing zip upload path so no hand-built zip is
+needed. Skips .git, node_modules, .DS_Store and __MACOSX. One-off file
+selection and manual zip uploads are unchanged; folder picking/dropping
+targets desktop browsers (noted in the UI). Raises the server-side zip
+file-count limit from 200 to 5000 for file-heavy zips (e.g. e-books),
+keeping the zip bomb size limits.
 
-No version bump: v1.1.0 never completed a deploy (it failed before the
-tag step), so re-running this on the same VERSION is fine.
+v1.2.3 is already tagged for the zip upload feature, so the version-bump
+guard blocks reusing it; ship these improvements as 1.2.4.

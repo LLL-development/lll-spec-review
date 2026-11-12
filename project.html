@@ -20,14 +20,17 @@
         <div class="field">
           <label for="file-input" data-i18n="project.label.upload"></label>
           <div class="file-picker">
-            <input type="file" id="file-input" multiple accept=".html,.htm,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg" onchange="updateFileNames()">
+            <input type="file" id="file-input" multiple accept=".html,.htm,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg,.zip" onchange="updateFileNames()">
             <label class="btn btn-ghost" for="file-input" data-i18n="project.chooseFile"></label>
+            <input type="file" id="folder-input" webkitdirectory directory multiple hidden onchange="updateFolderName()">
+            <label class="btn btn-ghost" onclick="return requestFolderPick(event)" data-i18n="project.chooseFolder"></label>
             <span class="file-names" id="file-names" data-i18n="project.noFile"></span>
           </div>
         </div>
         <button class="btn btn-shu" id="upload-btn" onclick="uploadSelected()" data-i18n="project.submit.upload"></button>
       </div>
       <div class="drop-hint" data-i18n="project.dropHint"></div>
+      <p style="font-size:12px; color:var(--ink-soft); margin-top:4px;" data-i18n="project.note.folder"></p>
       <p style="font-size:12px; color:var(--ink-soft); margin-top:8px;" data-i18n="project.note.versions">
       </p>
     </div>
@@ -72,6 +75,7 @@
   </main>
 
   <script src="js/i18n.js"></script>
+  <script src="js/zipstore.js"></script>
   <script src="js/brand.js"></script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
@@ -233,8 +237,90 @@
       else el.textContent = tOr("project.filesCount", { count: files.length });
     }
 
+    // ---------- folder upload (browser-side zip → existing zip path) ----------
+
+    const FOLDER_EXCLUDE = [".git", "node_modules", ".DS_Store", "__MACOSX"];
+    const FOLDER_MAX_FILES = 4500;   // server caps at 5000 entries; leave headroom
+    const FOLDER_MAX_BYTES = 20 * 1024 * 1024; // server total cap is 25MB (uncompressed)
+
+    function isExcludedPath(relPath) {
+      return relPath.split("/").some((seg) => FOLDER_EXCLUDE.includes(seg));
+    }
+
+    // Pre-flight notice before opening the native folder picker (the browser's
+    // "Upload N files to this site?" warning cannot be suppressed). Label has
+    // no `for` on purpose: preventDefault stops any default label behavior and
+    // we open the picker ourselves only after the user confirms.
+    async function requestFolderPick(e) {
+      if (e) e.preventDefault();
+      const ok = await appConfirm({
+        title: tOr("project.folderConfirm.title"),
+        message: tOr("project.folderConfirm.message"),
+        okLabel: tOr("project.folderConfirm.ok"),
+        cancelLabel: tOr("project.folderConfirm.cancel"),
+      });
+      if (!ok) return;
+      document.getElementById("folder-input").click();
+    }
+
+    function updateFolderName() {
+      const files = document.getElementById("folder-input").files;
+      const el = document.getElementById("file-names");
+      if (!files.length) el.textContent = tOr("project.noFile");
+      else el.textContent = tOr("project.filesCount", { count: files.length });
+    }
+
+    // Pack { file, rel } entries into a zip and send as <folder>.zip.
+    async function uploadFolderEntries(entries, fallbackName) {
+      const btn = document.getElementById("upload-btn");
+      const kept = [];
+      let totalBytes = 0;
+      for (const e of entries) {
+        const rel = String(e.rel || "").replace(/^\/+/, "");
+        if (!rel || isExcludedPath(rel)) continue;
+        totalBytes += e.file.size;
+        kept.push({ file: e.file, rel });
+      }
+      if (!kept.length) { toast(tOr("project.error.folderEmpty"), true); return false; }
+      if (kept.length > FOLDER_MAX_FILES) {
+        toast(tOr("project.error.folderTooMany", { count: kept.length }), true); return false;
+      }
+      if (totalBytes > FOLDER_MAX_BYTES) {
+        toast(tOr("project.error.folderTooLarge"), true); return false;
+      }
+
+      const firstSeg = kept[0].rel.split("/")[0];
+      const folderName = (kept.length === 1 && !kept[0].rel.includes("/"))
+        ? (fallbackName || "upload") : firstSeg;
+
+      btn.disabled = true;
+      try {
+        toast(tOr("project.uploadingFolder", { count: kept.length }));
+        const datas = [];
+        for (const e of kept) datas.push(new Uint8Array(await e.file.arrayBuffer()));
+        const blob = await ZipStore.createZip(kept.map((e, i) => ({ name: e.rel, data: datas[i] })));
+        const zipFile = new File([blob], `${folderName}.zip`, { type: "application/zip" });
+        toast(tOr("project.uploadingFolderDone", { count: kept.length }));
+        await uploadFiles([zipFile]);
+      } catch (e) {
+        const msg = e.code ? tOr("upload.err." + e.code, e.params || {}) : e.message;
+        toast(`${tOr("project.error.folderZip")}: ${msg}`, true);
+      } finally {
+        btn.disabled = false;
+      }
+      return true;
+    }
+
     async function uploadSelected() {
       const input = document.getElementById("file-input");
+      const folderInput = document.getElementById("folder-input");
+      if (folderInput.files.length) {
+        const entries = [...folderInput.files].map((f) => ({ file: f, rel: f.webkitRelativePath || f.name }));
+        await uploadFolderEntries(entries);
+        folderInput.value = "";
+        updateFolderName();
+        return;
+      }
       if (!input.files.length) { toast(tOr("project.error.noFile"), true); return; }
       await uploadFiles(input.files);
       input.value = "";
@@ -254,7 +340,8 @@
             toast(`${file.name} → v${res.version}`);
             ok++;
           } catch (e) {
-            toast(`${file.name}: ${e.message}`, true);
+            const msg = e.code ? tOr("upload.err." + e.code, e.params || {}) : e.message;
+            toast(`${file.name}: ${msg}`, true);
             fail++;
           }
         }
@@ -267,7 +354,25 @@
       }
     }
 
-    // Drag & drop onto the upload card
+    // Drag & drop onto the upload card (files as before; folders → zip path)
+    async function collectEntry(entry, prefix, out) {
+      if (entry.isFile) {
+        const file = await new Promise((res, rej) => entry.file(res, rej));
+        const rel = (prefix ? prefix + "/" : "") + entry.name;
+        if (!isExcludedPath(rel)) out.push({ file, rel });
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        // readEntries returns chunks (max ~100); loop until an empty batch.
+        let batch;
+        do {
+          batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+          for (const child of batch) {
+            await collectEntry(child, (prefix ? prefix + "/" : "") + entry.name, out);
+          }
+        } while (batch.length > 0);
+      }
+    }
+
     (function initDropzone() {
       const zone = document.getElementById("upload-card");
       let depth = 0;
@@ -278,6 +383,31 @@
         e.preventDefault();
         depth = 0;
         zone.classList.remove("dragging");
+
+        // Folder drops need DataTransferItem entries; fall back to plain files.
+        // Collect entries synchronously — items go stale after await.
+        const items = e.dataTransfer ? [...(e.dataTransfer.items || [])] : [];
+        const withEntries = items.length && typeof items[0].webkitGetAsEntry === "function";
+        let roots = [];
+        if (withEntries) {
+          try {
+            roots = items
+              .map((it) => it.kind === "file" ? it.webkitGetAsEntry() : null)
+              .filter(Boolean);
+          } catch (err) { roots = []; }
+        }
+        if (roots.some((r) => r.isDirectory)) {
+          try {
+            const out = [];
+            for (const root of roots) await collectEntry(root, "", out);
+            await uploadFolderEntries(out);
+          } catch (err) {
+            // entry traversal failed → plain-files path below
+            const files = [...(e.dataTransfer?.files || [])];
+            if (files.length) await uploadFiles(files);
+          }
+          return;
+        }
         const files = [...(e.dataTransfer?.files || [])];
         if (files.length) await uploadFiles(files);
       });

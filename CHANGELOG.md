@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.2.4 — folder upload & higher file limit
+
+- Added **folder upload**: pick or drop a whole folder and the browser packs
+  it into a zip on the spot, reusing the existing zip upload path — no need
+  to build a zip by hand anymore. One-off file selection and manual zip
+  uploads work exactly as before.
+- Common noise is skipped when packing a folder: `.git`, `node_modules`,
+  `.DS_Store`, and `__MACOSX` entries are excluded.
+- Raised the server-side zip file-count limit from **200 to 5000** so
+  file-heavy zips (e.g. e-books) go through; zip bomb size limits
+  (25MB total expanded, 8MB per file, 10MB output) are unchanged.
+- Folder picking/dropping targets desktop browsers; mobile may not support
+  it (noted in the UI).
+
+## 1.2.3 — zip upload (self-contained mock)
+
+- Added **zip upload**: uploading a zip of a mock (HTML + CSS/JS/images)
+  builds a **single self-contained HTML** by inlining relative references
+  (CSS/JS/images) with their real data, then stores it like any other
+  document. Clients can view the finished mock with styles and scripts
+  applied, alongside the existing redline comments, diff, and version
+  history.
+- One-off HTML/Markdown/text/image uploads work exactly as before — zip is a
+  new path; existing upload behavior is unchanged.
+- Multiple pages inside the zip are not embedded: links to other HTML files
+  (e.g. `<a href="about.html">`) pass through untouched; page navigation is
+  not supported (single-document viewer).
+- Scripts with `defer`/`async`/`type="module"` and external references
+  (http/https/data: CDNs) are not transformed — they pass through as-is.
+- Added the `fflate` dependency for zip extraction, with zip bomb/size limits
+  and zip slip protections.
+
+## 1.2.2 — CI: deploy on Node 22
+
+- Bumped the deploy workflow's setup-node from 20 to 22, since the latest
+  Wrangler requires Node.js >= 22; this resolves the failure in the
+  "Apply database migrations" step.
+- No application feature or UI changes in this release.
+
 ## 1.2.1 — dependency security updates
 
 - Update Hono to 4.13.13 and Wrangler to 4.151.1, resolving the dependency audit advisories without changing application features.
