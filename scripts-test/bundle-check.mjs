@@ -53,7 +53,7 @@ console.log("data: untouched:", html.includes('src="data:image/png;base64,AAA"')
 console.log("anchor untouched:", html.includes('href="#top"'));
 console.log("outside untouched:", html.includes('../outside/nope.png"'));
 console.log("missing untouched:", html.includes('img/missing.png"'));
-console.log("no src attr on inlined script:", !/<script[^>]+src=[^>]*>\s*<\/script/.test(html.replace(/<script>\n[\s\S]*?\n<\/script>/g, "")));
+console.log("no src attr on inlined script:", !/<script[^>]+src=[^>]*>\s*<\/script\s*>/i.test(html.replace(/<script>\n[\s\S]*?\n<\/script\s*>/gi, "")));
 // MEDIUM4 回帰: JS 本文内の '<img src="logo.png">' は元のまま（&quot; 混入なし）
 console.log("js body img untouched:", html.includes(`el.innerHTML='<img src="logo.png">'`));
 

@@ -70,7 +70,7 @@ function check(name, ok) {
   });
   const { html } = await bundleZip(new File([z], "t.zip"));
   check("4a JS string untouched", html.includes(`el.innerHTML='<img src="logo.png">'`));
-  check("4b no &quot; injected into script body", !/<script>[\s\S]*?<\/script>/.test("") && !html.includes("&quot;"));
+  check("4b no &quot; injected into script body", !html.includes("&quot;"));
 }
 
 // --- 5. MEDIUM6: query/fragment と URL エンコードを解決
