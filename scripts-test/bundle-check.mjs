@@ -53,7 +53,22 @@ console.log("data: untouched:", html.includes('src="data:image/png;base64,AAA"')
 console.log("anchor untouched:", html.includes('href="#top"'));
 console.log("outside untouched:", html.includes('../outside/nope.png"'));
 console.log("missing untouched:", html.includes('img/missing.png"'));
-console.log("no src attr on inlined script:", !/<script[^>]+src=[^>]*>\s*<\/script\s*>/i.test(html.replace(/<script>\n[\s\S]*?\n<\/script\s*>/gi, "")));
+// インライン化後、ローカル script が src を残していないかを文字列走査で確認
+// （タグマッチの正規表現は使わない → CodeQL js/bad-tag-filter に引っ掛からない）
+// 外部/データ URL（http/data://）の src は意図的にインライン化されないため除外する。
+function hasScriptTagWithSrc(h) {
+  let i = 0;
+  while ((i = h.indexOf("<script", i)) !== -1) {
+    const gt = h.indexOf(">", i);
+    if (gt === -1) break;
+    const tag = h.slice(i, gt); // タグ先頭〜> の間
+    const m = /\bsrc\s*=\s*["']?([^"'\s>]*)/.exec(tag); // src 属性の値を取り出し
+    if (m && !/^(https?:)?\/\//i.test(m[1]) && !/^data:/i.test(m[1])) return true; // ローカル src の残存
+    i = gt + 1;
+  }
+  return false;
+}
+console.log("no src attr on inlined script:", !hasScriptTagWithSrc(html));
 // MEDIUM4 回帰: JS 本文内の '<img src="logo.png">' は元のまま（&quot; 混入なし）
 console.log("js body img untouched:", html.includes(`el.innerHTML='<img src="logo.png">'`));
 
