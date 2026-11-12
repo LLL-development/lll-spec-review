@@ -25,6 +25,7 @@
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { notifyNewComment } from "./notify.js";
+import { bundleZip, BundleError } from "./bundle.js";
 import {
   COOKIE_NAME, uuid,
   hashPassword, verifyPassword, generatePassword,
@@ -386,19 +387,59 @@ app.post("/api/projects/:id/documents", requireOwner, async (c) => {
   const projectId = c.req.param("id");
   const body = await c.req.parseBody();
   const file = body["file"];
-  if (!(file instanceof File)) return c.json({ error: "ファイルがありません" }, 400);
+  if (!(file instanceof File)) return c.json({ error: "ファイルがありません", code: "noFile" }, 400);
   const ext = (file.name.split(".").pop() || "").toLowerCase();
-  if (!EXT_TYPES[ext]) {
-    return c.json({ error: "対応形式: HTML / Markdown / テキスト / 画像 (png, jpg, gif, webp, svg)" }, 400);
-  }
-  if (file.size > 10 * 1024 * 1024) return c.json({ error: "10MB以下にしてください" }, 400);
 
+  // zip は別経路: 解凍して単一自己完結 HTML に組み立て、以降は
+  // .html アップロードと全く同じ流れで保存する（filename は主 HTML 名）。
+  if (ext === "zip") {
+    if (file.size > 10 * 1024 * 1024) return c.json({ error: "10MB以下にしてください", code: "tooLarge", params: { maxMB: 10 } }, 400);
+    let bundled;
+    try {
+      bundled = await bundleZip(file);
+    } catch (e) {
+      // ユーザー向けに返してよいのは BundleError だけ。他は内部情報を漏らさない
+      if (e instanceof BundleError) {
+        return c.json({ error: e.message, ...(e.code ? { code: e.code, params: e.params } : {}) }, 400);
+      }
+      console.error("bundleZip failed:", e);
+      return c.json({ error: "zip の展開に失敗しました" }, 500);
+    }
+    // 保存名は主 HTML のファイル名（制御文字除去・長さ制限）。
+    // バイト列で渡す（R2 put は長さ既知の ArrayBuffer を最も確実に受け取る）
+    const saveName = sanitizeFilename(bundled.entryName);
+    if (!saveName) return c.json({ error: "zip から保存名を取り出せませんでした", code: "zipNoSaveName" }, 400);
+    return saveDocument(c, projectId, saveName, "html",
+      new TextEncoder().encode(bundled.html));
+  }
+
+  // Object.hasOwn — プロトタイプ由来のキー（constructor など）を通さない
+  if (!Object.hasOwn(EXT_TYPES, ext)) {
+    return c.json({ error: "対応形式: HTML / Markdown / テキスト / 画像 (png, jpg, gif, webp, svg) / zip", code: "unsupportedType" }, 400);
+  }
+  if (file.size > 10 * 1024 * 1024) return c.json({ error: "10MB以下にしてください", code: "tooLarge", params: { maxMB: 10 } }, 400);
+
+  return saveDocument(c, projectId, file.name, ext, file.stream());
+});
+
+// zip 変換後の保存名を安全な形に（パス除去・制御文字除去・NFC・200字）
+function sanitizeFilename(name) {
+  return String(name || "")
+    .split(/[\\/]/).pop()
+    .replace(/[\x00-\x1f]/g, "")
+    .normalize("NFC")
+    .slice(0, 200);
+}
+
+// 保存本体（単発アップロードと zip 変換後の両方から呼ぶ）。
+// version 採番・doc_group 継続・R2先書き→DB失敗ならR2削除 の順序は従来通り。
+async function saveDocument(c, projectId, filename, ext, contentStream) {
   // version bump per (project, filename) — fetch the latest existing
   // version's own row directly, not a MAX() mixed with other columns
   // (which in SQLite wouldn't reliably come from that same row).
   const prev = await c.env.DB.prepare(
     "SELECT id, doc_group_id, version FROM documents WHERE project_id = ? AND filename = ? ORDER BY version DESC LIMIT 1"
-  ).bind(projectId, file.name).first();
+  ).bind(projectId, filename).first();
   const version = (prev?.version || 0) + 1;
 
   const id = uuid();
@@ -410,21 +451,26 @@ app.post("/api/projects/:id/documents", requireOwner, async (c) => {
 
   // R2 first, then D1 — if the DB write fails we clean up the object,
   // never the other way round (a DB row pointing at nothing = broken doc).
-  await c.env.DOCS.put(r2Key, file.stream(), {
+  await c.env.DOCS.put(r2Key, contentStream, {
     httpMetadata: { contentType: EXT_TYPES[ext] },
   });
   try {
     await c.env.DB.prepare(
       `INSERT INTO documents (id, project_id, filename, r2_key, version, uploaded_by, doc_group_id)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(id, projectId, file.name, r2Key, version, c.get("user").id, docGroupId).run();
+    ).bind(id, projectId, filename, r2Key, version, c.get("user").id, docGroupId).run();
   } catch (e) {
-    await c.env.DOCS.delete(r2Key);
+    // delete 失敗で元の DB エラーを隠さない（ただし無言にせずログする）
+    try {
+      await c.env.DOCS.delete(r2Key);
+    } catch (_) {
+      console.error("r2 cleanup failed", r2Key);
+    }
     throw e;
   }
 
   return c.json({ id, version });
-});
+}
 
 // Metadata + sibling versions
 app.get("/api/documents/:id", async (c) => {

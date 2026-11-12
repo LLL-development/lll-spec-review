@@ -12,6 +12,8 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     const err = new Error(data?.error || `HTTP ${res.status}`);
     err.status = res.status;
+    err.code = data?.code;
+    err.params = data?.params;
     throw err;
   }
   return data;
