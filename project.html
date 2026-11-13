@@ -117,7 +117,11 @@
         titleEl.removeAttribute("data-i18n");
         document.title = `${BRAND.nameJa} — ${project.name}`;
       } catch (e) {
-        document.getElementById("project-title").textContent = tOr("project.error.notFound");
+        const titleEl = document.getElementById("project-title");
+        // Drop the data-i18n hook so later apply()/setLang() sweeps don't
+        // overwrite the error message with the "loading" placeholder.
+        titleEl.removeAttribute("data-i18n");
+        titleEl.textContent = tOr("project.error.notFound");
         return;
       }
 
@@ -135,9 +139,9 @@
     function renderDocuments() {
       const el = document.getElementById("doc-list");
       // Build via DOM APIs with textContent only (no innerHTML — XSS policy).
-      el.textContent = "";
       if (docsError !== null) {
         // Server messages are not translatable keys: show as-is.
+        el.textContent = "";
         const err = document.createElement("div");
         err.className = "empty";
         err.textContent = docsError;
@@ -145,6 +149,7 @@
         return;
       }
       if (!docsCache) return; // not loaded yet: keep the loading placeholder
+      el.textContent = "";
       if (!docsCache.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
@@ -337,7 +342,7 @@
             const fd = new FormData();
             fd.append("file", file);
             const res = await apiUpload(`/api/projects/${projectId}/documents`, fd);
-            toast(`${file.name} → v${res.version}`);
+            toast(tOr("project.toast.uploaded", { name: file.name, version: res.version }));
             ok++;
           } catch (e) {
             const msg = e.code ? tOr("upload.err." + e.code, e.params || {}) : e.message;
@@ -482,12 +487,64 @@
         main.append(name, sub);
         const side = document.createElement("div");
         side.className = "item-side";
-        const role = document.createElement("span");
-        role.className = "badge badge-ai";
-        // Role label via t(); unknown roles fall back to the raw value.
-        const roleKey = "project.role." + m.member_role;
-        role.textContent = tOr(roleKey) !== roleKey ? tOr(roleKey) : m.member_role;
-        side.appendChild(role);
+        if (m.account_role === "client" && m.user_id !== currentProfile.id) {
+          // Click-to-edit: badge → select on click, back to badge on blur/change.
+          const roleKey = "project.role." + m.member_role;
+          const badge = document.createElement("span");
+          badge.className = "badge badge-ai badge-role-editable";
+          badge.textContent = tOr(roleKey) !== roleKey ? tOr(roleKey) : m.member_role;
+          badge.title = tOr("project.tooltip.clickToChange");
+          badge.addEventListener("click", function openSelect() {
+            const sel = document.createElement("select");
+            sel.className = "member-role-select";
+            const roleOptions = [
+              { value: "client_viewer", key: "project.role.client_viewer" },
+              { value: "client_commenter", key: "project.role.client_commenter" },
+              { value: "owner", key: "project.role.owner" },
+            ];
+            for (const opt of roleOptions) {
+              const o = document.createElement("option");
+              o.value = opt.value;
+              o.textContent = tOr(opt.key);
+              if (m.member_role === opt.value) o.selected = true;
+              sel.appendChild(o);
+            }
+            let changed = false;
+            sel.addEventListener("change", async () => {
+              if (sel.disabled) return;
+              changed = true;
+              sel.disabled = true;
+              try {
+                await fetch(`/api/projects/${projectId}/members/${m.user_id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "same-origin",
+                  body: JSON.stringify({ member_role: sel.value }),
+                }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); });
+                toast(tOr("project.toast.roleChanged", { name: m.display_name || m.email, role: tOr("project.role." + sel.value) }));
+                await loadMembers(); // re-fetch → re-renders as badge
+              } catch (e) {
+                toast(`${tOr("project.toast.roleChangeFailed")}: ${e.message}`, true);
+                sel.replaceWith(badge); // restore badge
+                return;
+              }
+            });
+            sel.addEventListener("blur", () => {
+              setTimeout(() => { if (!changed && sel.isConnected && document.activeElement !== sel) sel.replaceWith(badge); }, 150);
+            });
+            badge.replaceWith(sel);
+            sel.focus();
+            sel.click(); // immediately open dropdown
+          });
+          side.appendChild(badge);
+        } else {
+          const role = document.createElement("span");
+          role.className = "badge badge-ai";
+          // Role label via t(); unknown roles fall back to the raw value.
+          const roleKey = "project.role." + m.member_role;
+          role.textContent = tOr(roleKey) !== roleKey ? tOr(roleKey) : m.member_role;
+          side.appendChild(role);
+        }
         if (m.account_role === "client" && m.user_id !== currentProfile.id) {
           const resetBtn = document.createElement("button");
           resetBtn.className = "btn btn-ghost btn-sm";
