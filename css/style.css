@@ -129,6 +129,7 @@ a.list-item:hover { border-left-color: var(--shu); transform: translateX(2px); }
 .list-item .item-title { font-weight: 700; font-size: 15px; }
 .list-item .item-sub { font-size: 12px; color: var(--ink-soft); }
 .list-item .item-side { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.member-role-select { font-size: 12px; padding: 2px 4px; }
 
 .empty {
   border: 1px dashed var(--line);
@@ -185,7 +186,7 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
 .btn-ghost { background: transparent; color: var(--ink); border-color: var(--line); }
 .btn-ghost:hover { background: rgba(38,36,31,.05); }
 
-.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-sm { padding: 6px 12px; font-size: 12px; white-space: nowrap; }
 
 .badge {
   display: inline-block;
@@ -199,6 +200,8 @@ input:focus, select:focus { outline: 2px solid var(--ai); outline-offset: 1px; b
 }
 .badge-ai { color: var(--ai); border-color: var(--ai); }
 .badge-shu { color: var(--shu); border-color: var(--shu); }
+.badge-role-editable { cursor: pointer; transition: opacity .15s; }
+.badge-role-editable:hover { opacity: 0.7; }
 
 /* ---------- login ---------- */
 
