@@ -349,6 +349,22 @@ app.delete("/api/projects/:id/members/:userId", requireOwner, async (c) => {
   return c.json({ ok: true });
 });
 
+app.patch("/api/projects/:id/members/:userId", requireOwner, async (c) => {
+  const { member_role } = await c.req.json().catch(() => ({}));
+  const roles = ["owner", "client_commenter", "client_viewer"];
+  if (!roles.includes(member_role)) return c.json({ error: "invalid role" }, 400);
+  const projectId = c.req.param("id");
+  const userId = c.req.param("userId");
+  if (userId === c.get("user").id && member_role !== "owner") {
+    return c.json({ error: "自分自身のオーナー権限は外せません / You can't remove your own owner role" }, 400);
+  }
+  const result = await c.env.DB.prepare(
+    "UPDATE project_members SET member_role = ? WHERE project_id = ? AND user_id = ?"
+  ).bind(member_role, projectId, userId).run();
+  if (!result.meta.changes) return c.json({ error: "not found" }, 404);
+  return c.json({ ok: true });
+});
+
 // ============================================================
 // DOCUMENTS
 // ============================================================

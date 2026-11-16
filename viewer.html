@@ -13,19 +13,19 @@
       <span class="hanko" style="width:30px;height:30px;font-size:17px;" data-brand="mark"></span>
     </a>
     <a class="btn btn-ghost btn-sm" id="back-link" href="dashboard.html">
-      <span class="label-desktop">← 戻る / Back</span><span class="label-mobile">← 戻る</span>
+      <span class="label-desktop" data-i18n="viewer.back"></span><span class="label-mobile" data-i18n="viewer.backShort"></span>
     </a>
-    <span class="doc-name" id="doc-name">読み込み中…</span>
+    <span class="doc-name" id="doc-name" data-i18n="viewer.loading">読み込み中…</span>
     <select id="version-select" onchange="switchVersion(this.value)"></select>
     <div class="spacer"></div>
     <button class="btn btn-sm btn-shu" id="mode-btn" style="display:none" onclick="toggleMode()">
-      <span class="label-desktop">📍 コメントモード</span><span class="label-mobile">📍 コメント</span>
+      <span class="label-desktop" data-i18n="viewer.commentMode"></span><span class="label-mobile" data-i18n="viewer.commentModeShort"></span>
     </button>
     <button class="btn btn-ghost btn-sm" id="diff-btn" style="display:none" onclick="toggleDiffBar()">
-      <span class="label-desktop">🔀 変更を見る / Diff</span><span class="label-mobile">🔀 変更</span>
+      <span class="label-desktop" data-i18n="viewer.diff"></span><span class="label-mobile" data-i18n="viewer.diffShort"></span>
     </button>
     <button class="btn btn-ghost btn-sm" id="fullscreen-btn" onclick="toggleFullscreen()">
-      <span class="label-desktop">⛶ フルスクリーン / Fullscreen</span><span class="label-mobile">⛶ 全画面</span>
+      <span class="label-desktop" data-i18n="viewer.fullscreen"></span><span class="label-mobile" data-i18n="viewer.fullscreenShort"></span>
     </button>
     <button class="btn btn-ghost btn-sm panel-toggle" id="panel-btn" onclick="togglePanel()">
       💬 <span id="comment-count">0</span>
@@ -33,53 +33,53 @@
   </div>
 
   <div class="diff-bar" id="diff-bar" hidden>
-    <span class="diff-bar-label">変更前 / Base</span>
+    <span class="diff-bar-label" data-i18n="viewer.diffBase"></span>
     <select id="diff-base"></select>
     <span class="diff-bar-arrow">→</span>
-    <span class="diff-bar-label">変更後 / Compare</span>
+    <span class="diff-bar-label" data-i18n="viewer.diffCompare"></span>
     <select id="diff-compare"></select>
-    <button class="btn btn-sm btn-shu" onclick="runDiff()">比較 / Compare</button>
-    <span class="diff-legend"><ins>追加</ins> <del>削除</del></span>
+    <button class="btn btn-sm btn-shu" onclick="runDiff()" data-i18n="viewer.diffRun"></button>
+    <span class="diff-legend"><ins data-i18n="viewer.diffAdded"></ins> <del data-i18n="viewer.diffRemoved"></del></span>
     <div class="spacer"></div>
-    <button class="btn btn-ghost btn-sm" onclick="closeDiff()">✕ 閉じる</button>
+    <button class="btn btn-ghost btn-sm" onclick="closeDiff()" data-i18n="viewer.close"></button>
   </div>
 
   <div class="viewer-main">
     <div class="frame-wrap" id="frame-wrap">
-      <iframe id="doc-frame" sandbox="allow-scripts allow-popups" title="Document preview"></iframe>
+      <iframe id="doc-frame" sandbox="allow-scripts allow-popups" data-i18n-title="viewer.frameTitle"></iframe>
       <div class="mode-hint" id="mode-hint" hidden>
-        <span class="hint-desktop">クリック、またはテキストを選択してコメント / Click an element or select text to comment</span>
-        <span class="hint-mobile">タップまたはテキスト選択でコメント</span>
+        <span class="hint-desktop" data-i18n="viewer.hintDesktop"></span>
+        <span class="hint-mobile" data-i18n="viewer.hintMobile"></span>
       </div>
     </div>
 
     <aside class="comment-panel" id="panel">
       <div class="panel-head">
-        <span class="eyebrow" style="margin:0">Comments</span>
+        <span class="eyebrow" style="margin:0" data-i18n="viewer.panelHeading">Comments</span>
         <button class="btn btn-ghost btn-sm panel-close" onclick="togglePanel()">✕</button>
       </div>
 
       <!-- compose: appears after placing a pin -->
       <div class="compose card" id="compose" hidden>
         <div class="compose-anchor" id="compose-anchor"></div>
-        <textarea id="compose-body" rows="3" placeholder="コメントを入力…"></textarea>
+        <textarea id="compose-body" rows="3" placeholder="コメントを入力…" data-i18n-placeholder="viewer.composePlaceholder"></textarea>
         <div class="compose-actions">
-          <button class="btn btn-sm btn-shu" onclick="postComment()">投稿 / Post</button>
-          <button class="btn btn-ghost btn-sm" onclick="cancelCompose()">キャンセル</button>
+          <button class="btn btn-sm btn-shu" onclick="postComment()" data-i18n="viewer.post"></button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelCompose()" data-i18n="viewer.cancel"></button>
         </div>
       </div>
 
       <label class="resolved-filter">
-        解決済みフィルタ / Resolved filter
+        <span data-i18n="viewer.resolvedFilter"></span>
         <select id="resolved-filter" onchange="onFilterChange()">
-          <option value="all" selected>すべて / All</option>
-          <option value="unresolved">未解決 / Unresolved</option>
-          <option value="resolved">解決済み / Resolved</option>
+          <option value="all" selected data-i18n="viewer.filterAll"></option>
+          <option value="unresolved" data-i18n="viewer.filterUnresolved"></option>
+          <option value="resolved" data-i18n="viewer.filterResolved"></option>
         </select>
       </label>
 
       <div id="threads" class="threads">
-        <div class="empty" style="padding:20px">読み込み中…</div>
+        <div class="empty" style="padding:20px" data-i18n="viewer.loading">読み込み中…</div>
       </div>
     </aside>
   </div>
@@ -91,6 +91,13 @@
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
   <script>
+    // i18n availability guard (same spirit as project.html/dashboard.html): if
+    // js/i18n.js failed to load (404 etc.), fall back to the key string.
+    const HAS_I18N = typeof window.I18N !== "undefined" && typeof window.I18N.setLang === "function";
+    function tOr(key, params) {
+      return (window.I18N && typeof I18N.t === "function") ? I18N.t(key, params) : key;
+    }
+
     let docMeta = null;
     let comments = [];
     let mode = "browse";
@@ -105,6 +112,15 @@
       if (!profile) return;
       const docId = qs("doc");
       if (!docId) { location.href = "dashboard.html"; return; }
+      // Repaint JS-built labels on language switch (not covered by apply()).
+      if (window.I18N && typeof I18N.onChange === "function") {
+        I18N.onChange(() => {
+          updateModeBtn();
+          updateFullscreenBtn();
+          rebuildVersionSelects();
+          renderThreads();
+        });
+      }
       window.addEventListener("message", onFrameMessage);
       await loadDoc(docId, true);
       pollTimer = setInterval(refreshComments, 15000);
@@ -124,21 +140,24 @@
       try {
         docMeta = await apiGet(`/api/documents/${docId}`);
       } catch (e) {
-        document.getElementById("doc-name").textContent = "ドキュメントが見つかりません";
+        const nameEl = document.getElementById("doc-name");
+        nameEl.textContent = tOr("viewer.error.docNotFound");
+        nameEl.setAttribute("data-i18n-error", "viewer.error.docNotFound");
+        nameEl.removeAttribute("data-i18n");
         return;
       }
 
       document.getElementById("back-link").href = `project.html?id=${docMeta.project_id}`;
-      document.getElementById("doc-name").textContent = docMeta.filename;
+      const nameEl = document.getElementById("doc-name");
+      nameEl.textContent = docMeta.filename;
+      nameEl.removeAttribute("data-i18n");
       document.title = `${BRAND.nameJa} — ${docMeta.filename}`;
       document.getElementById("mode-btn").style.display = docMeta.can_comment ? "" : "none";
       document.getElementById("diff-btn").style.display = docMeta.versions.length > 1 ? "" : "none";
 
       if (buildVersionList) {
         const sel = document.getElementById("version-select");
-        sel.innerHTML = docMeta.versions.map((v, i) =>
-          `<option value="${v.id}" ${v.id === docMeta.id ? "selected" : ""}>v${v.version}${i === 0 ? " (最新)" : ""}</option>`
-        ).join("");
+        sel.innerHTML = versionOptions(docMeta.id);
       }
 
       try {
@@ -151,7 +170,7 @@
           : html + tag;
         frame().src = URL.createObjectURL(new Blob([injected], { type: "text/html" }));
       } catch (e) {
-        toast("ファイルの取得に失敗しました: " + e.message, true);
+        toast(tOr("viewer.error.fetchFile", { message: e.message }), true);
         return;
       }
 
@@ -270,16 +289,21 @@
       btn.querySelector(".label-mobile").textContent = mobileLabel;
     }
 
+    function updateModeBtn() {
+      const btn = document.getElementById("mode-btn");
+      setButtonLabels(
+        btn,
+        mode === "comment" ? tOr("viewer.commentModeOn") : tOr("viewer.commentMode"),
+        mode === "comment" ? tOr("viewer.commentModeOnShort") : tOr("viewer.commentModeShort")
+      );
+    }
+
     function toggleMode() {
       mode = mode === "comment" ? "browse" : "comment";
       const btn = document.getElementById("mode-btn");
       btn.classList.toggle("btn-shu", mode !== "comment");
       btn.classList.toggle("mode-active", mode === "comment");
-      setButtonLabels(
-        btn,
-        mode === "comment" ? "✓ コメントモード中" : "📍 コメントモード",
-        mode === "comment" ? "✓ コメント中" : "📍 コメント"
-      );
+      updateModeBtn();
       document.getElementById("mode-hint").hidden = mode !== "comment";
       sendState();
     }
@@ -290,7 +314,7 @@
       box.hidden = false;
       const preview = draftAnchor?.kind === "range"
         ? "“" + (draftAnchor.quote || "").slice(0, 60) + "”"
-        : (draftAnchor?.text ? draftAnchor.text.slice(0, 60) : "選択した箇所");
+        : (draftAnchor?.text ? draftAnchor.text.slice(0, 60) : tOr("viewer.selectedHere"));
       document.getElementById("compose-anchor").textContent = "📍 " + preview;
       document.getElementById("compose-body").focus();
     }
@@ -304,25 +328,26 @@
 
     async function postComment() {
       const body = document.getElementById("compose-body").value.trim();
-      if (!body) { toast("コメントを入力してください", true); return; }
+      if (!body) { toast(tOr("viewer.toast.commentRequired"), true); return; }
       try {
         await apiPost(`/api/documents/${docMeta.id}/comments`, { body, anchor: draftAnchor });
         cancelCompose();
         if (mode === "comment") toggleMode();
         await refreshComments();
-        toast("コメントを投稿しました");
+        toast(tOr("viewer.toast.commentPosted"));
       } catch (e) { toast(e.message, true); }
     }
 
     function renderThreads() {
+      if (!docMeta) return; // still loading: keep placeholder
       const el = document.getElementById("threads");
       const items = topLevel().filter(passesResolvedFilter);
       document.getElementById("comment-count").textContent =
         topLevel().filter(c => !c.resolved).length;
 
       if (!items.length) {
-        el.innerHTML = `<div class="empty" style="padding:24px 12px">コメントはまだありません。<br>
-          ${docMeta?.can_comment ? "「コメントモード」で文書内をクリックすると追加できます。" : ""}</div>`;
+        el.innerHTML = `<div class="empty" style="padding:24px 12px">${escapeHtml(tOr("viewer.emptyTitle"))}<br>
+          ${docMeta?.can_comment ? escapeHtml(tOr("viewer.emptyHint")) : ""}</div>`;
         return;
       }
 
@@ -333,12 +358,12 @@
         return `
         <div class="thread ${c.resolved ? "resolved" : ""}" id="thread-${c.id}">
           <div class="thread-head">
-            <button class="pin-chip" onclick="focusPin('${c.id}')" title="該当箇所へ">${n}</button>
+            <button class="pin-chip" onclick="focusPin('${c.id}')" title="${escapeHtml(tOr("viewer.pinTitle"))}">${n}</button>
             <div class="thread-meta">
               <span class="thread-author">${escapeHtml(c.author_name)}${c.author_role === "internal" ? ' <span class="badge badge-ai" style="font-size:10px">LLL</span>' : ""}</span>
               <span class="thread-time">${fmtDate(c.created_at)}</span>
             </div>
-            ${c.resolved ? '<span class="badge">解決済</span>' : ""}
+            ${c.resolved ? `<span class="badge">${escapeHtml(tOr("viewer.badgeResolved"))}</span>` : ""}
           </div>
           ${anchorPreview(c) ? `<div class="thread-anchor" onclick="focusPin('${c.id}')">📍 ${escapeHtml(anchorPreview(c))}</div>` : ""}
           <div class="thread-body">${escapeHtml(c.body)}</div>
@@ -349,17 +374,17 @@
                 <span class="thread-time">${fmtDate(r.created_at)}</span>
               </div>
               <div class="thread-body">${escapeHtml(r.body)}</div>
-              ${(r.author_id === currentProfile.id || isInternal()) ? `<button class="link-btn" onclick="deleteComment('${r.id}')">削除</button>` : ""}
+              ${(r.author_id === currentProfile.id || isInternal()) ? `<button class="link-btn" onclick="deleteComment('${r.id}')">${escapeHtml(tOr("viewer.delete"))}</button>` : ""}
             </div>`).join("")}
           <div class="thread-actions">
-            ${docMeta?.can_comment ? `<button class="link-btn" onclick="toggleReply('${c.id}')">返信</button>` : ""}
-            ${docMeta && docMeta.versions.length > 1 ? `<button class="link-btn" onclick="reviewChanges('${c.id}')">変更を確認 / See changes</button>` : ""}
-            ${docMeta?.can_comment ? `<button class="link-btn" onclick="setResolved('${c.id}', ${c.resolved ? "false" : "true"})">${c.resolved ? "再開" : "解決"}</button>` : ""}
-            ${(mine || isInternal()) ? `<button class="link-btn" onclick="deleteComment('${c.id}')">削除</button>` : ""}
+            ${docMeta?.can_comment ? `<button class="link-btn" onclick="toggleReply('${c.id}')">${escapeHtml(tOr("viewer.reply"))}</button>` : ""}
+            ${docMeta && docMeta.versions.length > 1 ? `<button class="link-btn" onclick="reviewChanges('${c.id}')">${escapeHtml(tOr("viewer.reviewChanges"))}</button>` : ""}
+            ${docMeta?.can_comment ? `<button class="link-btn" onclick="setResolved('${c.id}', ${c.resolved ? "false" : "true"})">${escapeHtml(c.resolved ? tOr("viewer.reopen") : tOr("viewer.resolve"))}</button>` : ""}
+            ${(mine || isInternal()) ? `<button class="link-btn" onclick="deleteComment('${c.id}')">${escapeHtml(tOr("viewer.delete"))}</button>` : ""}
           </div>
           <div class="reply-box" id="reply-${c.id}" hidden>
-            <textarea rows="2" placeholder="返信を入力…"></textarea>
-            <button class="btn btn-sm" onclick="postReply('${c.id}')">返信する</button>
+            <textarea rows="2" placeholder="${escapeHtml(tOr("viewer.replyPlaceholder"))}"></textarea>
+            <button class="btn btn-sm" onclick="postReply('${c.id}')">${escapeHtml(tOr("viewer.postReply"))}</button>
           </div>
         </div>`;
       }).join("");
@@ -421,9 +446,9 @@
 
     async function deleteComment(id) {
       const ok = await appConfirm({
-        title: "コメントを削除 / Delete comment",
-        message: "このコメントを削除しますか？返信も一緒に削除されます。",
-        okLabel: "削除する / Delete",
+        title: tOr("viewer.confirm.deleteComment"),
+        message: tOr("viewer.confirm.deleteCommentMsg"),
+        okLabel: tOr("viewer.confirm.deleteOk"),
         danger: true,
       });
       if (!ok) return;
@@ -454,8 +479,29 @@
 
     function versionOptions(selectedId) {
       return docMeta.versions.map((v, i) =>
-        `<option value="${v.id}" ${v.id === selectedId ? "selected" : ""}>v${v.version}${i === 0 ? " (最新)" : ""}</option>`
+        `<option value="${v.id}" ${v.id === selectedId ? "selected" : ""}>v${v.version}${i === 0 ? tOr("viewer.latestVersionSuffix") : ""}</option>`
       ).join("");
+    }
+
+    // Rebuild version <option>s so the "(latest)" suffix follows language switches.
+    function rebuildVersionSelects() {
+      if (!docMeta) return;
+      const sel = document.getElementById("version-select");
+      if (sel) {
+        const current = sel.value || docMeta.id;
+        sel.innerHTML = versionOptions(current);
+        sel.value = current;
+      }
+      const bar = document.getElementById("diff-bar");
+      if (bar && !bar.hidden) {
+        for (const id of ["diff-base", "diff-compare"]) {
+          const s = document.getElementById(id);
+          if (!s) continue;
+          const cur = s.value;
+          s.innerHTML = versionOptions(cur);
+          s.value = cur;
+        }
+      }
     }
 
     function toggleDiffBar() {
@@ -517,19 +563,19 @@
     let frameReadyResolve = null;
 
     async function runDiff() {
-      if (!isTextDoc()) { toast("画像はテキスト差分に対応していません(前後比較のみ)", true); return; }
+      if (!isTextDoc()) { toast(tOr("viewer.toast.imageDiffUnsupported"), true); return; }
       const baseId = document.getElementById("diff-base").value;
       const compareId = document.getElementById("diff-compare").value;
-      if (baseId === compareId) { toast("異なるバージョンを選んでください", true); return; }
+      if (baseId === compareId) { toast(tOr("viewer.toast.pickVersions"), true); return; }
       try {
         const [, oldVisible, newVisible] = await Promise.all([
           renderVersion(compareId), renderedTextOf(baseId), renderedTextOf(compareId),
         ]);
         const { newMarks } = diffText(oldVisible, newVisible);
         frame().contentWindow.postMessage({ ns: "lllsr-host", t: "diffmarks", marks: newMarks }, "*");
-        toast(`${newMarks.length} 箇所の追加/変更をハイライトしました`);
+        toast(tOr("viewer.toast.diffHighlights", { count: newMarks.length }));
       } catch (e) {
-        toast("差分の生成に失敗しました: " + e.message, true);
+        toast(tOr("viewer.error.diffFailed", { message: e.message }), true);
       }
     }
 
@@ -621,7 +667,7 @@
       const el = document.getElementById("frame-wrap");
       if (!document.fullscreenElement) {
         (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el)
-          .catch((e) => toast(`フルスクリーン表示に失敗しました: ${e.message}`, true));
+          .catch((e) => toast(tOr("viewer.error.fullscreenFailed", { message: e.message }), true));
       } else {
         (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
       }
@@ -634,8 +680,8 @@
       if (!btn) return;
       setButtonLabels(
         btn,
-        document.fullscreenElement ? "⛶ 元に戻す / Exit fullscreen" : "⛶ フルスクリーン / Fullscreen",
-        document.fullscreenElement ? "⛶ 戻す" : "⛶ 全画面"
+        document.fullscreenElement ? tOr("viewer.fullscreenExit") : tOr("viewer.fullscreen"),
+        document.fullscreenElement ? tOr("viewer.fullscreenExitShort") : tOr("viewer.fullscreenShort")
       );
     }
 
