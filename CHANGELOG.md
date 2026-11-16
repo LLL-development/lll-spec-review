@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.5 — CI: version bump
+
+- Bumped the version so the deploy workflow's version-bump guard passes (v1.2.4 was already released).
+- No application feature or UI changes in this release.
+
 ## 1.2.4 — folder upload & higher file limit
 
 - Added **folder upload**: pick or drop a whole folder and the browser packs
