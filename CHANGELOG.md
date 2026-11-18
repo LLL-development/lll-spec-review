@@ -1,9 +1,20 @@
 # Changelog
 
-## 1.2.5 — CI: version bump
+## 1.2.5 — client role labels
 
-- Bumped the version so the deploy workflow's version-bump guard passes (v1.2.4 was already released).
-- No application feature or UI changes in this release.
+- Clients can now see **their own role** (閲覧のみ / コメント可 / オーナー) in
+  the UI. The project list API (`GET /api/projects`) returns `member_role` for
+  clients, and the project detail API (`GET /api/projects/:id`) returns
+  `my_role` (`null` for internal members).
+- Added a **role badge** to each project in the dashboard project list,
+  showing that member's role. Unknown roles fall back to a raw label;
+  internal members see no badge.
+- Added "**あなたのロール: <label>**" below the title on the project page,
+  shown to all members (hidden for internal / `NULL`).
+- Added the `project.myRole.prefix` i18n key in both ja and en, reusing the
+  existing `project.role.*` labels.
+- No DB schema change or migration is needed — `member_role` is an existing
+  column.
 
 ## 1.2.4 — folder upload & higher file limit
 

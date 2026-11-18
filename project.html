@@ -11,8 +11,14 @@
   <header id="app-header"></header>
 
   <main class="container">
+    <p style="margin:0 0 12px;">
+      <a class="btn btn-ghost btn-sm" href="dashboard.html">
+        <span class="label-desktop" data-i18n="project.back"></span><span class="label-mobile" data-i18n="project.backShort"></span>
+      </a>
+    </p>
     <div class="eyebrow" data-i18n="project.eyebrow"></div>
     <h1 class="page-title" id="project-title" data-i18n="project.loading"></h1>
+    <div id="my-role-line" style="display:none; margin:-4px 0 16px;"></div>
 
     <!-- Upload (internal only) -->
     <div class="card dropzone" id="upload-card" style="display:none; margin-bottom:8px;">
@@ -51,7 +57,7 @@
             <label for="member-name" data-i18n="project.label.name"></label>
             <input type="text" id="member-name" data-i18n-placeholder="project.placeholder.name">
           </div>
-          <div class="field" style="flex:0 0 200px;">
+          <div class="field field-role">
             <label for="member-role" data-i18n="project.label.role"></label>
             <select id="member-role">
               <option value="client_commenter" data-i18n="project.role.client_commenter"></option>
@@ -93,6 +99,7 @@
     // I18N.onChange can repaint lists in the new language without re-fetching.
     let docsCache = null, docsError = null;   // docsError: server message as-is
     let membersCache = null, membersError = null;
+    let myRole = null; // own member_role from /api/projects/:id (null for internal)
 
     async function init() {
       const profile = await requireAuth();
@@ -104,7 +111,7 @@
       // and are NOT covered by apply()'s [data-i18n*] sweep. Subscribe BEFORE
       // the first load so switches during loading also repaint.
       if (window.I18N && typeof I18N.onChange === "function") {
-        I18N.onChange(() => { renderDocuments(); renderMembers(); });
+        I18N.onChange(() => { renderDocuments(); renderMembers(); renderMyRole(); });
       }
 
       let project;
@@ -126,12 +133,36 @@
       }
 
       canManage = project.can_manage;
+      myRole = project.my_role || null;
+      renderMyRole();
       if (project.can_manage) {
         document.getElementById("upload-card").style.display = "";
         document.getElementById("members-section").style.display = "";
         await loadMembers();
       }
       await loadDocuments();
+    }
+
+    // Own role label near the title. Shown to any member with a known role
+    // (including owners). Unknown/NULL my_role (e.g. internal) stays hidden.
+    // DOM API + textContent only (no innerHTML — XSS policy).
+    function renderMyRole() {
+      const el = document.getElementById("my-role-line");
+      el.style.display = "none";
+      el.textContent = "";
+      if (!myRole) return;
+      const prefix = document.createElement("span");
+      prefix.style.color = "var(--ink-soft)";
+      prefix.style.fontSize = "13px";
+      prefix.textContent = tOr("project.myRole.prefix");
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.style.marginLeft = "6px";
+      const roleKey = "project.role." + myRole;
+      const label = tOr(roleKey);
+      badge.textContent = label !== roleKey ? label : myRole;
+      el.append(prefix, badge);
+      el.style.display = "";
     }
 
     // ---------- documents ----------

@@ -104,6 +104,7 @@
     let draftAnchor = null;
     let frameReady = false;
     let pollTimer = null;
+    let accessLost = false; // 401/403/404 でアクセス喪失。以後のポーリングとUI更新を止める
 
     const frame = () => document.getElementById("doc-frame");
 
@@ -123,9 +124,10 @@
       }
       window.addEventListener("message", onFrameMessage);
       await loadDoc(docId, true);
-      pollTimer = setInterval(refreshComments, 15000);
+      if (!accessLost) pollTimer = setInterval(refreshComments, 15000);
       document.addEventListener("visibilitychange", () => {
-        if (!document.hidden) refreshComments();
+        if (document.visibilityState !== "visible" || !docMeta || accessLost) return;
+        refreshComments(); // refreshMeta() を内部で呼ぶので can_comment も更新される
       });
     }
 
@@ -136,16 +138,27 @@
     });
 
     async function loadDoc(docId, buildVersionList) {
+      if (accessLost) return;
       frameReady = false;
+      _metaSeq++; // 進行中の refreshMeta の結果を無効化する
       try {
         docMeta = await apiGet(`/api/documents/${docId}`);
       } catch (e) {
+        const st = e?.status;
+        const isCurrentDoc = buildVersionList || (docMeta && docId === docMeta.id);
+        if ((st === 401 || st === 403 || st === 404) && isCurrentDoc) {
+          // 初回ロードでアクセス不能なら即遷移/喪失UI。ポーリング開始前なので accessLost で十分。
+          await handleFatalAccessError(st);
+          return;
+        }
+        if (buildVersionList) docMeta = null; // 初回のみ。再読込失敗は旧 docMeta を保持して null 参照を防ぐ
         const nameEl = document.getElementById("doc-name");
         nameEl.textContent = tOr("viewer.error.docNotFound");
         nameEl.setAttribute("data-i18n-error", "viewer.error.docNotFound");
         nameEl.removeAttribute("data-i18n");
         return;
       }
+      if (accessLost) return; // 取得待ちの間に喪失確定なら後続の復活処理をしない
 
       document.getElementById("back-link").href = `project.html?id=${docMeta.project_id}`;
       const nameEl = document.getElementById("doc-name");
@@ -168,6 +181,7 @@
         const injected = /<\/body>/i.test(html)
           ? html.replace(/<\/body>/i, tag + "</body>")
           : html + tag;
+        if (accessLost) return;
         frame().src = URL.createObjectURL(new Blob([injected], { type: "text/html" }));
       } catch (e) {
         toast(tOr("viewer.error.fetchFile", { message: e.message }), true);
@@ -223,11 +237,92 @@
       if (sel) sel.value = docId;
     }
 
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    // 401=セッション切れ→ログインへ。403/404=追放または文書削除→アクセス喪失UI。
+    // それ以外(5xx/network)は呼び出さない（呼び出し側で判定する）。
+    async function handleFatalAccessError(status) {
+      if (accessLost) return;
+      accessLost = true;
+      stopPolling();
+      if (status === 401) {
+        location.href = "index.html";
+        return;
+      }
+      // 403 / 404: コメント能力と中身を剥奪し、読み取り専用で画面を畳む
+      if (docMeta) docMeta.can_comment = false;
+      const modeBtn = document.getElementById("mode-btn");
+      if (modeBtn) modeBtn.style.display = "none";
+      if (typeof mode !== "undefined" && mode === "comment") toggleMode();
+      cancelCompose();
+      openReplyId = null;
+      openReplyDraft = "";
+      comments = [];
+      renderThreads();
+      const vSel = document.getElementById("version-select");
+      if (vSel) vSel.disabled = true;
+      const dBtn = document.getElementById("diff-btn");
+      if (dBtn) dBtn.style.display = "none";
+      toast(tOr("viewer.accessRemoved"), true);
+    }
+
+    // docMeta（can_comment, versions）を軽量に再取得する。
+    // loadDoc() と違い iframe も下書きも触らない。
+    let _metaSeq = 0;
+    async function refreshMeta() {
+      if (!docMeta) return;
+      if (accessLost) return;
+      const seq = ++_metaSeq;
+      const docId = docMeta.id;
+      let fresh;
+      try {
+        fresh = await apiGet(`/api/documents/${docId}`);
+      } catch (e) {
+        // switchVersion 中の旧 id の遅延 404 で誤って accessLost を立てない
+        if (seq === _metaSeq && docMeta && docMeta.id === docId) {
+          const st = e?.status;
+          if (st === 401 || st === 403 || st === 404) await handleFatalAccessError(st);
+        }
+        return;
+      }
+      if (accessLost || seq !== _metaSeq || !docMeta || docMeta.id !== docId) return; // 競合対策
+      const changed = fresh.can_comment !== docMeta.can_comment;
+      docMeta = fresh;
+      document.getElementById("mode-btn").style.display = docMeta.can_comment ? "" : "none";
+      document.getElementById("diff-btn").style.display = docMeta.versions.length > 1 ? "" : "none";
+      if (!docMeta.can_comment) {
+        if (typeof mode !== "undefined" && mode === "comment") toggleMode();
+        cancelCompose();
+        openReplyId = null;
+        openReplyDraft = "";
+      }
+      if (changed) renderThreads();
+    }
+
+    // refreshComments の連番（順序保証用）。_metaSeq とは別物。
+    let _cSeq = 0;
     async function refreshComments() {
       if (!docMeta) return;
+      if (accessLost) return;
+      await refreshMeta();
+      if (!docMeta || accessLost) return;
+      const seq = ++_cSeq;        // この回の番号
+      const id = docMeta.id;      // どの doc を頼んだか発行時に確定
+      let r;
       try {
-        comments = await apiGet(`/api/documents/${docMeta.id}/comments`);
-      } catch (e) { return; }
+        r = await apiGet(`/api/documents/${id}/comments`);
+      } catch (e) {
+        if (seq === _cSeq && docMeta && docMeta.id === id) {
+          const st = e?.status;
+          if (st === 401 || st === 403 || st === 404) await handleFatalAccessError(st);
+        }
+        return;
+      }
+      // 応答が戻った時点で最新の自分の頼みでなければ破棄
+      if (accessLost || seq !== _cSeq || !docMeta || docMeta.id !== id) return;
+      comments = r;
       renderThreads();
       sendState();
     }
@@ -335,7 +430,36 @@
         if (mode === "comment") toggleMode();
         await refreshComments();
         toast(tOr("viewer.toast.commentPosted"));
-      } catch (e) { toast(e.message, true); }
+      } catch (e) {
+        if (await handlePermissionError(e)) return;
+        toast(e.message, true);
+      }
+    }
+
+    // 403 はロール変更のしるし。docMeta を軽量に再取得して UI を更新する。
+    async function handlePermissionError(e) {
+      const st = e?.status;
+      if (st === 401) { await handleFatalAccessError(401); return true; }
+      if (st === 404) {
+        // 対象コメントだけ消えた可能性が高い。画面は畳まず一覧を再取得し、
+        // 実際のアクセス喪失は GET 側(refreshMeta/refreshComments)に検知させる。
+        await refreshComments();
+        if (accessLost) return true;
+        toast(e.message, true);
+        return true;
+      }
+      const is403 = e?.status === 403 ||
+        /403|permission|権限/i.test(e?.message || "");
+      if (!is403) return false;
+      const wasCanComment = docMeta?.can_comment;
+      await refreshComments(); // refreshMeta() を内部で呼ぶ
+      if (accessLost) return true; // 喪失側で toast 済み。二重 toast 防止
+      if (docMeta && docMeta.can_comment !== wasCanComment) {
+        toast(tOr("viewer.permissionChanged"), true);
+      } else {
+        toast(e.message, true);
+      }
+      return true;
     }
 
     function renderThreads() {
@@ -426,7 +550,10 @@
         openReplyId = null;
         openReplyDraft = "";
         await refreshComments();
-      } catch (e) { toast(e.message, true); }
+      } catch (e) {
+        if (await handlePermissionError(e)) return;
+        toast(e.message, true);
+      }
     }
 
     async function setResolved(id, resolved) {
@@ -441,7 +568,10 @@
           const c = comments.find(x => x.id === id);
           if (c) await openDiffForComment(c);
         }
-      } catch (e) { toast(e.message, true); }
+      } catch (e) {
+        if (await handlePermissionError(e)) return;
+        toast(e.message, true);
+      }
     }
 
     async function deleteComment(id) {
@@ -455,7 +585,10 @@
       try {
         await apiDelete(`/api/comments/${id}`);
         await refreshComments();
-      } catch (e) { toast(e.message, true); }
+      } catch (e) {
+        if (await handlePermissionError(e)) return;
+        toast(e.message, true);
+      }
     }
 
     function focusThread(id) {

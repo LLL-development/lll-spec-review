@@ -66,6 +66,8 @@ const I18N = (() => {
       "account.toast.changed": "パスワードを変更しました",
 
       // ---- project.* ----
+      "project.back": "← プロジェクト一覧",
+      "project.backShort": "← 一覧",
       "project.eyebrow": "Project",
       "project.loading": "読み込み中…",
       "project.label.upload": "ファイルをアップロード",
@@ -91,6 +93,7 @@ const I18N = (() => {
       "project.role.client_commenter": "コメント可",
       "project.role.client_viewer": "閲覧のみ",
       "project.role.owner": "オーナー",
+      "project.myRole.prefix": "あなたのロール:",
       "project.tooltip.clickToChange": "クリックして変更",
       "project.submit.invite": "招待する",
       "project.note.invite": "未登録のメールアドレスを招待すると、一時パスワードが発行されます。",
@@ -192,6 +195,8 @@ const I18N = (() => {
       "viewer.reviewChanges": "変更を確認",
       "viewer.reopen": "再開",
       "viewer.resolve": "解決",
+      "viewer.permissionChanged": "権限が変更されました",
+      "viewer.accessRemoved": "このプロジェクトへのアクセスを失いました",
       "viewer.delete": "削除",
       "viewer.replyPlaceholder": "返信を入力…",
       "viewer.postReply": "返信する",
@@ -265,6 +270,8 @@ const I18N = (() => {
       "account.toast.changed": "Password changed",
 
       // ---- project.* ----
+      "project.back": "← Projects",
+      "project.backShort": "← List",
       "project.eyebrow": "Project",
       "project.loading": "Loading…",
       "project.label.upload": "Upload files",
@@ -290,6 +297,7 @@ const I18N = (() => {
       "project.role.client_commenter": "Can comment",
       "project.role.client_viewer": "View only",
       "project.role.owner": "Owner",
+      "project.myRole.prefix": "Your role:",
       "project.tooltip.clickToChange": "Click to change",
       "project.submit.invite": "Invite",
       "project.note.invite": "Inviting an unregistered email issues a temporary password.",
@@ -391,6 +399,8 @@ const I18N = (() => {
       "viewer.reviewChanges": "See changes",
       "viewer.reopen": "Reopen",
       "viewer.resolve": "Resolve",
+      "viewer.permissionChanged": "Your permissions have been updated",
+      "viewer.accessRemoved": "You no longer have access to this project",
       "viewer.delete": "Delete",
       "viewer.replyPlaceholder": "Write a reply…",
       "viewer.postReply": "Post reply",
