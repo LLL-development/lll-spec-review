@@ -168,6 +168,15 @@ export async function isProjectOwner(db, user, projectId) {
   return !!row;
 }
 
+// The user's own member_role in this project, or null when they have no
+// project_members row (internal staff are not members).
+export async function getMyMemberRole(db, userId, projectId) {
+  const row = await db.prepare(
+    "SELECT member_role FROM project_members WHERE project_id = ? AND user_id = ?"
+  ).bind(projectId, userId).first();
+  return row ? row.member_role : null;
+}
+
 // May the user comment? (Phase 2 uses this)
 export async function canCommentOnProject(db, user, projectId) {
   if (isInternal(user)) return true;

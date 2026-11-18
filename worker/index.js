@@ -30,7 +30,7 @@ import {
   COOKIE_NAME, uuid,
   hashPassword, verifyPassword, generatePassword,
   createSession, getSessionUser, destroySession,
-  isInternal, canAccessProject, canCommentOnProject, isProjectOwner, randomHex,
+  isInternal, canAccessProject, canCommentOnProject, isProjectOwner, getMyMemberRole, randomHex,
 } from "./lib.js";
 
 const app = new Hono();
@@ -258,9 +258,10 @@ app.get("/api/auth/google/callback", async (c) => {
 
 app.get("/api/projects", async (c) => {
   const user = c.get("user");
+  // internal users have no project_members row: member_role stays absent (null-safe in UI)
   const sql = isInternal(user)
     ? "SELECT id, name, client_name, created_at FROM projects ORDER BY created_at DESC"
-    : `SELECT p.id, p.name, p.client_name, p.created_at
+    : `SELECT p.id, p.name, p.client_name, p.created_at, m.member_role
          FROM projects p JOIN project_members m ON m.project_id = p.id
         WHERE m.user_id = ? ORDER BY p.created_at DESC`;
   const stmt = isInternal(user) ? c.env.DB.prepare(sql) : c.env.DB.prepare(sql).bind(user.id);
@@ -296,7 +297,10 @@ app.get("/api/projects/:id", async (c) => {
   const project = await c.env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first();
   if (!project) return c.json({ error: "not found" }, 404);
   const can_manage = await isProjectOwner(c.env.DB, user, projectId);
-  return c.json({ ...project, can_manage });
+  // internal staff have no project_members row: my_role stays null (UI hides the badge).
+  // can_manage kept for backward compatibility.
+  const my_role = isInternal(user) ? null : await getMyMemberRole(c.env.DB, user.id, projectId);
+  return c.json({ ...project, can_manage, my_role });
 });
 
 // ============================================================
@@ -631,8 +635,12 @@ app.patch("/api/comments/:id", async (c) => {
   }
   if ("body" in patch) {
     if (cm.author_id !== user.id) return c.json({ error: "自分のコメントのみ編集できます" }, 403);
+    if (!(await canCommentOnProject(c.env.DB, user, doc.project_id))) {
+      return c.json({ error: "コメント権限がありません / No comment permission" }, 403);
+    }
     const text = (patch.body || "").trim();
     if (!text) return c.json({ error: "コメントを入力してください" }, 400);
+    if (text.length > 4000) return c.json({ error: "コメントが長すぎます(4000文字まで)" }, 400);
     await c.env.DB.prepare("UPDATE comments SET body = ? WHERE id = ?").bind(text, cm.id).run();
   }
   return c.json({ ok: true });

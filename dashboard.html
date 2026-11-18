@@ -98,6 +98,17 @@
         badge.className = "badge badge-ai";
         badge.textContent = tOr("dashboard.open");
         side.appendChild(badge);
+        // Role badge: only for members with a known role (internal users have
+        // no member_role). DOM API + textContent only (no innerHTML — XSS policy).
+        if (p.member_role) {
+          const roleBadge = document.createElement("span");
+          roleBadge.className = "badge";
+          roleBadge.style.marginLeft = "6px";
+          const roleKey = "project.role." + p.member_role;
+          const label = tOr(roleKey);
+          roleBadge.textContent = label !== roleKey ? label : p.member_role;
+          side.appendChild(roleBadge);
+        }
         a.append(main, side);
         listEl.appendChild(a);
       });
