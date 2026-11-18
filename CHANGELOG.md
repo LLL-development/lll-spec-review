@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.6 — narrow-screen responsiveness
+
+- Fixed the file-selection label being truncated to "ファイルが選……" on
+  screens narrower than ~555px. The chosen file name (and the "no file chosen"
+  placeholder) now wraps onto its own line instead of being clipped with an
+  ellipsis. The previous `@media (max-width:640px)` override was dead (it lost
+  to the later default `nowrap`/`ellipsis` rule) and is now applied via a
+  higher-priority rule at the end of the stylesheet.
+- Added a dedicated `@media (max-width:400px)` block so that on very narrow
+  screens (<383px) content is no longer squeezed by a white background:
+  reduced container/header padding, wrapped the header and form fields to full
+  width, and let list-item badges/buttons wrap instead of overflowing
+  horizontally.
+- Purely CSS (`css/style.css`); no markup, JS, or DB changes. Existing
+  desktop (≥640px) and 384–640px layouts are unchanged.
+
 ## 1.2.5 — client role labels
 
 - Clients can now see **their own role** (閲覧のみ / コメント可 / オーナー) in
